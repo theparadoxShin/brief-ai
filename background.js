@@ -13,7 +13,7 @@ chrome.contextMenus.onClicked.addListener( async (info, tab) => {
             // Summarize the selected text using an AI API
             const translatedText = await summarizeText(selectedText);
             // Send the summarized text to the content script to play audio
-            chrome.tabs.sendMessage(tab.id, { action: "PLAY_AUDIO", text: translatedText }); // @todo: create content script to handle this message
+            chrome.tabs.sendMessage(tab.id, { action: "PLAY_AUDIO", text: translatedText });
         } catch (error) {
             console.error("Error summarizing text:", error);
         }
