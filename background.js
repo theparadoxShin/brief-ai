@@ -1,5 +1,5 @@
 // Background Service Worker - Gestion des APIs AI et menu contextuel
-import { AIService } from './services/ai-service.js';
+import { AIService } from './services/ai-services.js';
 
 const aiService = new AIService();
 
