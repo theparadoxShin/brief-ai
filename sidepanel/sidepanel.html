@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brief AI</title>
+    <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <h1>✨ Brief AI</h1>
+                <p class="tagline">AI-Powered Text Tools</p>
+            </div>
+            <div class="status-indicator" id="statusIndicator">
+                <span class="status-dot"></span>
+                <span class="status-text">Checking...</span>
+            </div>
+        </header>
+
+        <!-- Tabs Navigation -->
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="summarize">
+                <span class="tab-icon">📝</span>
+                <span class="tab-label">Summarize</span>
+            </button>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="content">
+            <!-- Summarize Tab -->
+            <div class="tab-content active" id="summarize-tab">
+                <div class="feature-header">
+                    <h2>Text Summarizer</h2>
+                    <p>Get concise summaries of long texts</p>
+                </div>
+
+                <div class="input-section">
+                    <label for="summarize-input">Text to summarize:</label>
+                    <textarea 
+                        id="summarize-input" 
+                        class="text-input" 
+                        placeholder="Paste text here or select text on any webpage and right-click..."
+                        rows="8"
+                    ></textarea>
+                    
+                    <div class="options-row">
+                        <div class="option-group">
+                            <label for="summary-type">Type:</label>
+                            <select id="summary-type">
+                                <option value="tldr">TL;DR</option>
+                                <option value="key-points">Key Points</option>
+                                <option value="teaser">Teaser</option>
+                                <option value="headline">Headline</option>
+                            </select>
+                        </div>
+                        <div class="option-group">
+                            <label for="summary-length">Length:</label>
+                            <select id="summary-length">
+                                <option value="short">Short</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="long">Long</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary" id="summarize-btn">
+                        <span class="btn-icon">📝</span>
+                        Summarize Text
+                    </button>
+                </div>
+
+                <div class="result-section" id="summarize-result" style="display: none;">
+                    <div class="result-header">
+                        <h3>Summary Result</h3>
+                        <button class="btn-icon-only" id="copy-summary" title="Copy to clipboard">
+                            📋
+                        </button>
+                    </div>
+                    <div class="result-content" id="summary-output"></div>
+                    <div class="result-stats" id="summary-stats"></div>
+                </div>
+            </div>
+
+
+        </main>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="spinner"></div>
+            <p id="loadingText">Processing...</p>
+        </div>
+    </div>
+
+    <script src="sidepanel.js" type="module"></script>
+</body>
+</html>
