@@ -4,6 +4,11 @@ class SidePanelUI {
     constructor() {
         this.currentTab = 'summarize';
         this.chatHistory = [];
+        this.ttsState = {
+            isSpeaking: false,
+            isPaused: false,
+            currentUtterance: null
+        };
         this.init();
     }
 
@@ -22,6 +27,21 @@ class SidePanelUI {
         
         // Load last result if available
         this.loadLastResult();
+
+        // Ensure voices are loaded for TTS
+        this.ensureVoicesLoaded();
+    }
+
+    // ===== TTS VOICE LOADING =====
+    ensureVoicesLoaded() {
+        if ('speechSynthesis' in window) {
+            // Voices might not be loaded immediately
+            if (window.speechSynthesis.getVoices().length === 0) {
+                window.speechSynthesis.addEventListener('voiceschanged', () => {
+                    console.log('Voices loaded:', window.speechSynthesis.getVoices().length);
+                }, { once: true });
+            }
+        }
     }
 
     // ===== TABS NAVIGATION =====
@@ -53,33 +73,29 @@ class SidePanelUI {
             this.handleSummarize();
         });
 
-        // Translate button
-        document.getElementById('translate-btn').addEventListener('click', () => {
-            this.handleTranslate();
-        });
-
-        // Detect language button
-        document.getElementById('detect-btn').addEventListener('click', () => {
-            this.handleDetectLanguage();
-        });
-
-        // Chat send button
-        document.getElementById('chat-send-btn').addEventListener('click', () => {
-            this.handleChatSend();
-        });
-
-        // Chat input enter key
-        document.getElementById('chat-input').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                this.handleChatSend();
-            }
-        });
-
         // Copy buttons
         document.getElementById('copy-summary').addEventListener('click', () => {
             this.copyToClipboard('summary-output');
         });
+
+        // TTS controls
+        const playBtn = document.getElementById('play-summary');
+        if (playBtn) {
+            console.log('Play button found');
+            playBtn.addEventListener('click', () => this.handlePlaySummary());
+        }
+
+        const pauseBtn = document.getElementById('pause-summary');
+        if (pauseBtn) {
+            console.log('Pause button found');
+            pauseBtn.addEventListener('click', () => this.handlePauseSummary());
+        }
+
+        const stopBtn = document.getElementById('stop-summary');
+        if (stopBtn) {
+            console.log('Stop button found');
+            stopBtn.addEventListener('click', () => this.handleStopSummary());
+        }
 
         document.getElementById('copy-translation').addEventListener('click', () => {
             this.copyToClipboard('translation-output');
@@ -249,196 +265,123 @@ class SidePanelUI {
         resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // ===== TRANSLATE =====
-    async handleTranslate() {
-        const input = document.getElementById('translate-input').value.trim();
-        
-        if (!input) {
-            this.showError('Please enter text to translate');
+    // ===== TTS: Play Summary =====
+    handlePlaySummary() {
+        const text = (document.getElementById('summary-output')?.textContent || '').trim();
+        if (!text) {
+            this.showError('No summary to play');
             return;
         }
 
-        const sourceLang = document.getElementById('source-lang').value;
-        const targetLang = document.getElementById('target-lang').value;
-
-        if (sourceLang === targetLang && sourceLang !== 'auto') {
-            this.showError('Source and target languages must be different');
-            return;
+        if (this.ttsState.isPaused) {
+            // Resume if paused
+            window.speechSynthesis.resume();
+            this.ttsState.isPaused = false;
+            this.updateTTSButtons('playing');
+        } else {
+            // Start new speech
+            this.speak(text, { lang: 'en-US' });
         }
+    }
 
-        this.showLoading('Translating...');
+    handlePauseSummary() {
+        if (this.ttsState.isSpeaking && !this.ttsState.isPaused) {
+            window.speechSynthesis.pause();
+            this.ttsState.isPaused = true;
+            this.updateTTSButtons('paused');
+        }
+    }
 
+    handleStopSummary() {
+        window.speechSynthesis.cancel();
+        this.ttsState.isSpeaking = false;
+        this.ttsState.isPaused = false;
+        this.ttsState.currentUtterance = null;
+        this.updateTTSButtons('stopped');
+    }
+
+    updateTTSButtons(state) {
+        const playBtn = document.getElementById('play-summary');
+        const pauseBtn = document.getElementById('pause-summary');
+        const stopBtn = document.getElementById('stop-summary');
+
+        if (!playBtn || !pauseBtn || !stopBtn) return;
+
+        switch (state) {
+            case 'playing':
+                playBtn.style.display = 'none';
+                pauseBtn.style.display = 'inline-flex';
+                stopBtn.style.display = 'inline-flex';
+                break;
+            case 'paused':
+                playBtn.style.display = 'inline-flex';
+                pauseBtn.style.display = 'none';
+                stopBtn.style.display = 'inline-flex';
+                break;
+            case 'stopped':
+            default:
+                playBtn.style.display = 'inline-flex';
+                pauseBtn.style.display = 'none';
+                stopBtn.style.display = 'none';
+                break;
+        }
+    }
+
+    speak(text, options = {}) {
         try {
-            const response = await chrome.runtime.sendMessage({
-                action: 'TRANSLATE',
-                text: input,
-                targetLanguage: targetLang,
-                sourceLanguage: sourceLang === 'auto' ? null : sourceLang
-            });
-
-            this.hideLoading();
-
-            if (response.success) {
-                this.displayTranslationResult(response.data);
-            } else {
-                this.showError(response.error || 'Translation failed');
+            if (!('speechSynthesis' in window)) {
+                this.showError('Text-to-Speech not supported in this browser');
+                return;
             }
-        } catch (error) {
-            this.hideLoading();
-            this.showError(error.message);
-        }
-    }
 
-    displayTranslationResult(data) {
-        const resultSection = document.getElementById('translate-result');
-        const output = document.getElementById('translation-output');
-        const info = document.getElementById('translation-info');
+            // Cancel any ongoing speech
+            window.speechSynthesis.cancel();
 
-        output.textContent = data.translatedText;
-        info.innerHTML = `
-            <span>🌍 From: ${this.getLanguageName(data.sourceLanguage)}</span>
-            <span>🎯 To: ${this.getLanguageName(data.targetLanguage)}</span>
-        `;
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = options.lang || 'en-US';
+            utterance.rate = options.rate || 1.0;
+            utterance.pitch = options.pitch || 1.0;
+            utterance.volume = options.volume || 1.0;
 
-        resultSection.style.display = 'block';
-        resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    // ===== DETECT LANGUAGE =====
-    async handleDetectLanguage() {
-        const input = document.getElementById('detect-input').value.trim();
-        
-        if (!input) {
-            this.showError('Please enter text to analyze');
-            return;
-        }
-
-        this.showLoading('Detecting language...');
-
-        try {
-            const response = await chrome.runtime.sendMessage({
-                action: 'DETECT_LANGUAGE',
-                text: input
-            });
-
-            this.hideLoading();
-
-            if (response.success) {
-                this.displayLanguageResult(response.data);
-            } else {
-                this.showError(response.error || 'Language detection failed');
+            utterance.onstart = () => {
+                this.ttsState.isSpeaking = true;
+                this.ttsState.isPaused = false;
+                this.ttsState.currentUtterance = utterance;
+                this.updateTTSButtons('playing');
+                console.log('Speech started');
             }
-        } catch (error) {
-            this.hideLoading();
-            this.showError(error.message);
-        }
-    }
-
-    displayLanguageResult(data) {
-        const resultSection = document.getElementById('detect-result');
-        const output = document.getElementById('language-output');
-
-        let html = '';
-        
-        // Display top 3 results
-        const topResults = data.allResults.slice(0, 3);
-        topResults.forEach(result => {
-            const percentage = (result.confidence * 100).toFixed(1);
-            html += `
-                <div class="language-item">
-                    <div>
-                        <div class="language-name">${this.getLanguageName(result.detectedLanguage)}</div>
-                        <div class="confidence-bar">
-                            <div class="confidence-fill" style="width: ${percentage}%"></div>
-                        </div>
-                    </div>
-                    <div class="language-confidence">${percentage}%</div>
-                </div>
-            `;
-        });
-
-        output.innerHTML = html;
-        resultSection.style.display = 'block';
-        resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    // ===== AI CHAT =====
-    async handleChatSend() {
-        const input = document.getElementById('chat-input');
-        const message = input.value.trim();
-        
-        if (!message) return;
-
-        // Clear input
-        input.value = '';
-
-        // Add user message to chat
-        this.addChatMessage(message, 'user');
-
-        // Show typing indicator
-        this.showLoading('AI is thinking...');
-
-        try {
-            const response = await chrome.runtime.sendMessage({
-                action: 'PROMPT_AI',
-                text: message,
-                context: this.getChatContext()
-            });
-
-            this.hideLoading();
-
-            if (response.success) {
-                this.addChatMessage(response.data.response, 'ai');
-                this.chatHistory.push({
-                    user: message,
-                    ai: response.data.response,
-                    timestamp: Date.now()
-                });
-            } else {
-                this.showError(response.error || 'AI chat failed');
+            utterance.onend = () => {
+                this.ttsState.isSpeaking = false;
+                this.ttsState.isPaused = false;
+                this.ttsState.currentUtterance = null;
+                this.updateTTSButtons('stopped');
             }
+            utterance.onerror = (e) => {
+                console.error('TTS error:', e);
+                
+                // Don't show error for intentional cancellations (stop button)
+                if (e.error !== 'canceled' && e.error !== 'interrupted') {
+                    this.showError('An error occurred during speech synthesis');
+                }
+                
+                this.ttsState.isSpeaking = false;
+                this.ttsState.isPaused = false;
+                this.ttsState.currentUtterance = null;
+                this.updateTTSButtons('stopped');
+            }
+
+            window.speechSynthesis.speak(utterance);
+            console.log('Speech started');
+            console.log('Speech queued:', text);
         } catch (error) {
-            this.hideLoading();
+            console.error('TTS error:', error);
+            this.showError('Failed to play speech');
             this.showError(error.message);
+            this.updateTTSButtons('stopped');
         }
     }
 
-    displayChatResult(userMessage, aiResponse) {
-        this.addChatMessage(userMessage, 'user');
-        this.addChatMessage(aiResponse.response, 'ai');
-    }
 
-    addChatMessage(content, type) {
-        const chatContainer = document.getElementById('chat-messages');
-        
-        // Remove welcome message if present
-        const welcome = chatContainer.querySelector('.chat-welcome');
-        if (welcome) {
-            welcome.remove();
-        }
-
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'chat-message';
-        
-        const messageClass = type === 'user' ? 'message-user' : 'message-ai';
-        messageDiv.innerHTML = `
-            <div class="${messageClass}">
-                <div class="message-content">${this.escapeHtml(content)}</div>
-                <div class="message-time">${new Date().toLocaleTimeString()}</div>
-            </div>
-        `;
-
-        chatContainer.appendChild(messageDiv);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    getChatContext() {
-        if (this.chatHistory.length === 0) return null;
-        
-        // Return last 3 messages for context
-        const recentHistory = this.chatHistory.slice(-3);
-        return recentHistory.map(h => `User: ${h.user}\nAI: ${h.ai}`).join('\n\n');
-    }
 
     // ===== UTILITY FUNCTIONS =====
     async copyToClipboard(elementId) {
@@ -492,7 +435,7 @@ class SidePanelUI {
     }
 
     showError(message) {
-        alert(`❌ Error: ${message}`);
+        alert(` Error: ${message}`);
     }
 
     showToast(message) {

@@ -1,9 +1,9 @@
-// Background Service Worker - Gestion des APIs AI et menu contextuel
+// Background Service Worker - Handles context menu, messages, and AI service interactions
 import { AIService } from './services/ai-services.js';
 
 const aiService = new AIService();
 
-// Menu contextuel items
+// Context Menu Definitions
 const MENU_ITEMS = [
     {
         id: "summarize",
