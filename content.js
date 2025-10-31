@@ -1,7 +1,10 @@
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "PLAY_AUDIO" && request.text) {
-        console.log("Received text to play audio:", request.text);
+// Content Script - Minimal script for future enhancements
 
-        return true; // Keep the message channel open for async response
-    }
+// Listen for messages from background or side panel
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log('Content script received message:', request);
+    
+    sendResponse({ success: true });
 });
+
+console.log('Brief AI content script loaded');
