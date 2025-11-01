@@ -16,11 +16,6 @@ const MENU_ITEMS = [
         contexts: ["selection"]
     },
     {
-        id: "detectLanguage",
-        title: "🔍 Detect Language",
-        contexts: ["selection"]
-    },
-    {
         id: "promptAI",
         title: "💬 Ask AI about this",
         contexts: ["selection"]

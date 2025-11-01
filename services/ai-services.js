@@ -72,6 +72,177 @@ export class AIService {
         }
     }
 
+        // ===== TRANSLATOR API =====
+    async translate(text, targetLanguage = 'en', sourceLanguage = null) {
+        try {
+
+            if ('Translator' in self) {
+            // The Translator API is supported.
+                throw new Error('Translator API is not available in this context');
+            }
+
+            // Détecter la langue source si non fournie
+            if (!sourceLanguage) {
+                const detected = await this.detectLanguage(text);
+                sourceLanguage = detected.detectedLanguage;
+            }
+
+            // Vérifier la disponibilité
+            const canTranslate = await window.translation?.canTranslate({
+                sourceLanguage,
+                targetLanguage
+            });
+
+            if (canTranslate === 'no') {
+                throw new Error(`Translation from ${sourceLanguage} to ${targetLanguage} is not available`);
+            }
+
+            // Créer le translator
+            const translator = await window.translation.createTranslator({
+                sourceLanguage,
+                targetLanguage
+            });
+
+            // Attendre le téléchargement si nécessaire
+            if (canTranslate === 'after-download') {
+                console.log('Downloading translation model...');
+                translator.addEventListener('downloadprogress', (e) => {
+                    console.log(`Translation model download: ${e.loaded}/${e.total}`);
+                });
+                await translator.ready;
+            }
+
+            // Traduire le texte
+            const translatedText = await translator.translate(text);
+
+            return {
+                originalText: text,
+                translatedText,
+                sourceLanguage,
+                targetLanguage,
+                timestamp: Date.now()
+            };
+
+        } catch (error) {
+            console.error('Translation error:', error);
+            throw new Error(`Translation failed: ${error.message}`);
+        }
+    }
+
+    // ===== LANGUAGE DETECTOR API =====
+    async detectLanguage(text) {
+        try {
+            // Vérifier la disponibilité
+            const canDetect = await window.translation?.canDetect();
+
+            if (canDetect === 'no') {
+                throw new Error('Language detection is not available');
+            }
+
+            // Créer le detector si pas déjà fait
+            if (!this.languageDetector) {
+                this.languageDetector = await window.translation.createDetector();
+            }
+
+            // Attendre le téléchargement si nécessaire
+            if (canDetect === 'after-download') {
+                console.log('Downloading language detection model...');
+                await this.languageDetector.ready;
+            }
+
+            // Détecter la langue
+            const results = await this.languageDetector.detect(text);
+
+            // Trier par confiance
+            results.sort((a, b) => b.confidence - a.confidence);
+
+            return {
+                detectedLanguage: results[0]?.detectedLanguage,
+                confidence: results[0]?.confidence,
+                allResults: results,
+                text: text.substring(0, 100) + (text.length > 100 ? '...' : '')
+            };
+
+        } catch (error) {
+            console.error('Language detection error:', error);
+            throw new Error(`Language detection failed: ${error.message}`);
+        }
+    }
+
+    // ===== PROMPT API (Gemini Nano) =====
+    async prompt(text, context = null) {
+        try {
+            // Vérifier la disponibilité
+            const canPrompt = await window.ai?.languageModel?.capabilities();
+
+            if (canPrompt?.available === 'no') {
+                throw new Error('Prompt API is not available. Make sure you are using Chrome 128+ and have enabled the AI features.');
+            }
+
+            // Créer une session si pas déjà fait
+            if (!this.aiSession) {
+                this.aiSession = await window.ai.languageModel.create({
+                    systemPrompt: context || 'You are a helpful AI assistant. Provide clear, concise, and accurate responses.'
+                });
+            }
+
+            // Attendre le téléchargement si nécessaire
+            if (canPrompt?.available === 'after-download') {
+                console.log('Downloading AI model...');
+                await this.aiSession.ready;
+            }
+
+            // Envoyer le prompt
+            const response = await this.aiSession.prompt(text);
+
+            return {
+                prompt: text,
+                response,
+                context: context || 'default',
+                timestamp: Date.now()
+            };
+
+        } catch (error) {
+            console.error('Prompt API error:', error);
+            throw new Error(`AI prompt failed: ${error.message}`);
+        }
+    }
+
+    // ===== STREAMING PROMPT (pour de longues réponses) =====
+    async promptStream(text, onChunk) {
+        try {
+            const canPrompt = await window.ai?.languageModel?.capabilities();
+
+            if (canPrompt?.available === 'no') {
+                throw new Error('Prompt API is not available');
+            }
+
+            if (!this.aiSession) {
+                this.aiSession = await window.ai.languageModel.create();
+            }
+
+            const stream = await this.aiSession.promptStreaming(text);
+            let fullResponse = '';
+
+            for await (const chunk of stream) {
+                fullResponse = chunk;
+                if (onChunk) {
+                    onChunk(chunk);
+                }
+            }
+
+            return {
+                prompt: text,
+                response: fullResponse,
+                timestamp: Date.now()
+            };
+
+        } catch (error) {
+            console.error('Streaming prompt error:', error);
+            throw new Error(`Streaming prompt failed: ${error.message}`);
+        }
+    }
+
     // ===== CHECKING AVAILABILITY =====
     async checkAvailability() {
         const status = {

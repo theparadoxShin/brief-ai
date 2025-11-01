@@ -73,6 +73,24 @@ class SidePanelUI {
             this.handleSummarize();
         });
 
+        // Translate button
+        document.getElementById('translate-btn').addEventListener('click', () => {
+            this.handleTranslate();
+        });
+
+        // Chat send button
+        document.getElementById('chat-send-btn').addEventListener('click', () => {
+            this.handleChatSend();
+        });
+
+        // Chat input enter key
+        document.getElementById('chat-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.handleChatSend();
+            }
+        });
+
         // Copy buttons
         document.getElementById('copy-summary').addEventListener('click', () => {
             this.copyToClipboard('summary-output');
@@ -205,9 +223,6 @@ class SidePanelUI {
                 break;
             case 'translate':
                 this.displayTranslationResult(result.output);
-                break;
-            case 'detectLanguage':
-                this.displayLanguageResult(result.output);
                 break;
             case 'promptAI':
                 this.displayChatResult(result.input, result.output);
@@ -358,12 +373,7 @@ class SidePanelUI {
             }
             utterance.onerror = (e) => {
                 console.error('TTS error:', e);
-                
-                // Don't show error for intentional cancellations (stop button)
-                if (e.error !== 'canceled' && e.error !== 'interrupted') {
-                    this.showError('An error occurred during speech synthesis');
-                }
-                
+                this.showError('An error occurred during speech synthesis');
                 this.ttsState.isSpeaking = false;
                 this.ttsState.isPaused = false;
                 this.ttsState.currentUtterance = null;
@@ -381,6 +391,199 @@ class SidePanelUI {
         }
     }
 
+
+    // ======================= TRANSLATE =============================
+    async handleTranslate() {
+        const input = document.getElementById('translate-input').value.trim();
+        
+        if (!input) {
+            this.showError('Please enter text to translate');
+            return;
+        }
+
+        const sourceLang = document.getElementById('source-lang').value;
+        const targetLang = document.getElementById('target-lang').value;
+
+        if (sourceLang === targetLang && sourceLang !== 'auto') {
+            this.showError('Source and target languages must be different');
+            return;
+        }
+
+        this.showLoading('Translating...');
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'TRANSLATE',
+                text: input,
+                targetLanguage: targetLang,
+                sourceLanguage: sourceLang === 'auto' ? null : sourceLang
+            });
+
+            this.hideLoading();
+
+            if (response.success) {
+                this.displayTranslationResult(response.data);
+            } else {
+                this.showError(response.error || 'Translation failed');
+            }
+        } catch (error) {
+            this.hideLoading();
+            this.showError(error.message);
+        }
+    }
+
+    displayTranslationResult(data) {
+        const resultSection = document.getElementById('translate-result');
+        const output = document.getElementById('translation-output');
+        const info = document.getElementById('translation-info');
+
+        output.textContent = data.translatedText;
+        info.innerHTML = `
+            <span>🌍 From: ${this.getLanguageName(data.sourceLanguage)}</span>
+            <span>🎯 To: ${this.getLanguageName(data.targetLanguage)}</span>
+        `;
+
+        resultSection.style.display = 'block';
+        resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    
+
+    // ===== DETECT LANGUAGE =====
+    async handleDetectLanguage() {
+        const input = document.getElementById('detect-input').value.trim();
+        
+        if (!input) {
+            this.showError('Please enter text to analyze');
+            return;
+        }
+
+        this.showLoading('Detecting language...');
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'DETECT_LANGUAGE',
+                text: input
+            });
+
+            this.hideLoading();
+
+            if (response.success) {
+                this.displayLanguageResult(response.data);
+            } else {
+                this.showError(response.error || 'Language detection failed');
+            }
+        } catch (error) {
+            this.hideLoading();
+            this.showError(error.message);
+        }
+    }
+
+    displayLanguageResult(data) {
+        const resultSection = document.getElementById('detect-result');
+        const output = document.getElementById('language-output');
+
+        let html = '';
+        
+        // Display top 3 results
+        const topResults = data.allResults.slice(0, 3);
+        topResults.forEach(result => {
+            const percentage = (result.confidence * 100).toFixed(1);
+            html += `
+                <div class="language-item">
+                    <div>
+                        <div class="language-name">${this.getLanguageName(result.detectedLanguage)}</div>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" style="width: ${percentage}%"></div>
+                        </div>
+                    </div>
+                    <div class="language-confidence">${percentage}%</div>
+                </div>
+            `;
+        });
+
+        output.innerHTML = html;
+        resultSection.style.display = 'block';
+        resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // ===== AI CHAT =====
+    async handleChatSend() {
+        const input = document.getElementById('chat-input');
+        const message = input.value.trim();
+        
+        if (!message) return;
+
+        // Clear input
+        input.value = '';
+
+        // Add user message to chat
+        this.addChatMessage(message, 'user');
+
+        // Show typing indicator
+        this.showLoading('AI is thinking...');
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'PROMPT_AI',
+                text: message,
+                context: this.getChatContext()
+            });
+
+            this.hideLoading();
+
+            if (response.success) {
+                this.addChatMessage(response.data.response, 'ai');
+                this.chatHistory.push({
+                    user: message,
+                    ai: response.data.response,
+                    timestamp: Date.now()
+                });
+            } else {
+                this.showError(response.error || 'AI chat failed');
+            }
+        } catch (error) {
+            this.hideLoading();
+            this.showError(error.message);
+        }
+    }
+
+    displayChatResult(userMessage, aiResponse) {
+        this.addChatMessage(userMessage, 'user');
+        this.addChatMessage(aiResponse.response, 'ai');
+    }
+
+    addChatMessage(content, type) {
+        const chatContainer = document.getElementById('chat-messages');
+        
+        // Remove welcome message if present
+        const welcome = chatContainer.querySelector('.chat-welcome');
+        if (welcome) {
+            welcome.remove();
+        }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'chat-message';
+        
+        const messageClass = type === 'user' ? 'message-user' : 'message-ai';
+        messageDiv.innerHTML = `
+            <div class="${messageClass}">
+                <div class="message-content">${this.escapeHtml(content)}</div>
+                <div class="message-time">${new Date().toLocaleTimeString()}</div>
+            </div>
+        `;
+
+        chatContainer.appendChild(messageDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    getChatContext() {
+        if (this.chatHistory.length === 0) return null;
+        
+        // Return last 3 messages for context
+        const recentHistory = this.chatHistory.slice(-3);
+        return recentHistory.map(h => `User: ${h.user}\nAI: ${h.ai}`).join('\n\n');
+    }
 
 
     // ===== UTILITY FUNCTIONS =====
