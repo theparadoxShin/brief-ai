@@ -129,6 +129,15 @@ class SidePanelUI {
 
             if (response.success) {
                 this.updateStatusIndicator(response.data);
+
+                // If some features are downloading or downloadable, check again in 5 seconds
+                const hasDownloading = Object.values(response.data).some(
+                    s => s === 'downloading' || s === 'downloadable'
+                );
+                if (hasDownloading) {
+                    console.log('Some features are downloading, will check again in 5 seconds...');
+                    setTimeout(() => this.checkAIStatus(), 5000);
+                }
             }
         } catch (error) {
             console.error('Error checking AI status:', error);
@@ -146,15 +155,47 @@ class SidePanelUI {
             return;
         }
 
-        const allReady = status && 
-            Object.values(status).every(s => s === 'readily' || s === 'yes');
+        if (!status) {
+            indicator.className = 'status-indicator warning';
+            statusText.textContent = 'Checking AI status...';
+            return;
+        }
 
-        if (allReady) {
+        // Count status of each feature
+        // Possible values: 'available', 'downloading', 'downloadable', 'unavailable'
+        const features = Object.entries(status);
+        const availableCount = features.filter(([_, s]) => s === 'available').length;
+        const downloadingCount = features.filter(([_, s]) => s === 'downloading').length;
+        const downloadableCount = features.filter(([_, s]) => s === 'downloadable').length;
+        const unavailableCount = features.filter(([_, s]) => s === 'unavailable').length;
+
+        console.log('AI Status:', status);
+        console.log(`Available: ${availableCount}, Downloading: ${downloadingCount}, Downloadable: ${downloadableCount}, Unavailable: ${unavailableCount}`);
+
+        // All features available and ready
+        if (availableCount === features.length) {
             indicator.className = 'status-indicator ready';
             statusText.textContent = 'All AI features ready';
-        } else {
+        }
+        // Some features are currently downloading
+        else if (downloadingCount > 0) {
             indicator.className = 'status-indicator warning';
-            statusText.textContent = 'Some features downloading...';
+            statusText.textContent = `Downloading models... (${downloadingCount}/${features.length})`;
+        }
+        // Some features need download (requires user interaction)
+        else if (downloadableCount > 0) {
+            indicator.className = 'status-indicator warning';
+            statusText.textContent = `${downloadableCount} model(s) need download`;
+        }
+        // Some features unavailable
+        else if (unavailableCount > 0) {
+            indicator.className = 'status-indicator warning';
+            statusText.textContent = `${availableCount}/${features.length} features available`;
+        }
+        // Mixed state
+        else {
+            indicator.className = 'status-indicator warning';
+            statusText.textContent = 'AI features loading...';
         }
     }
 
@@ -190,7 +231,6 @@ class SidePanelUI {
         const tabMap = {
             'summarize': 'summarize',
             'translate': 'translate',
-            'detectLanguage': 'detect',
             'promptAI': 'chat'
         };
 
@@ -218,6 +258,15 @@ class SidePanelUI {
         if (!result.action) return;
 
         if (result.error) {
+            // Special-case: suppress noisy same-language translation error from older runs
+            if (result.action === 'translate' && /Translation from\s+([a-z-]+)\s+to\s+\1\s+is not available/i.test(result.error)) {
+                console.warn('Suppressing same-language translation error');
+                // Clear stale error to avoid re-alerting on future loads
+                try { chrome.storage?.local?.remove?.('lastResult'); } catch {}
+                this.showToast('Source and target languages are the same. Showing original text.');
+                return;
+            }
+
             // Log and show error, but don't treat 'Unknown action' as a blocking error on load
             if (result.error !== 'Unknown action') {
                 this.showError(result.error);
@@ -388,8 +437,14 @@ class SidePanelUI {
                 this.updateTTSButtons('stopped');
             }
             utterance.onerror = (e) => {
-                console.error('TTS error:', e);
-                this.showError('An error occurred during speech synthesis');
+                // Ignore benign cancellations/interruptions (triggered by user stop/cancel)
+                const reason = e && (e.error || e.name || '').toString().toLowerCase();
+                if (reason.includes('canceled') || reason.includes('cancel') || reason.includes('interrupted')) {
+                    console.warn('TTS canceled/interrupted');
+                } else {
+                    console.error('TTS error:', e);
+                    this.showError('An error occurred during speech synthesis');
+                }
                 this.ttsState.isSpeaking = false;
                 this.ttsState.isPaused = false;
                 this.ttsState.currentUtterance = null;
@@ -480,7 +535,7 @@ class SidePanelUI {
     async handleChatSend() {
         const input = document.getElementById('chat-input');
         const message = input.value.trim();
-        
+
         if (!message) return;
 
         // Clear input
@@ -489,31 +544,53 @@ class SidePanelUI {
         // Add user message to chat
         this.addChatMessage(message, 'user');
 
-        // Show AI thinking message in chat
+        // Show AI thinking indicator and create streaming message container
         const thinkingId = this.addChatThinking();
+        const streamingMessageId = this.createStreamingMessage();
 
         try {
-            const response = await chrome.runtime.sendMessage({
-                action: 'PROMPT_AI',
-                text: message,
-                context: this.getChatContext()
+            // Create a connection port for streaming
+            const port = chrome.runtime.connect({ name: 'ai-chat-stream' });
+            let fullResponse = '';
+
+            // Listen for streamed chunks
+            port.onMessage.addListener((msg) => {
+                if (msg.type === 'chunk') {
+                    // The chunk contains the full response accumulated so far
+                    fullResponse = msg.chunk;
+                    this.updateStreamingMessage(streamingMessageId, fullResponse);
+                } else if (msg.type === 'done') {
+                    // Remove thinking indicator when done
+                    this.removeChatThinking(thinkingId);
+
+                    // Final update to ensure we have the complete response
+                    if (fullResponse) {
+                        this.updateStreamingMessage(streamingMessageId, fullResponse);
+
+                        // Save to chat history
+                        this.chatHistory.push({
+                            user: message,
+                            ai: fullResponse,
+                            timestamp: Date.now()
+                        });
+                    }
+                } else if (msg.type === 'error') {
+                    this.removeChatThinking(thinkingId);
+                    this.removeStreamingMessage(streamingMessageId);
+                    this.showError(msg.error || 'AI chat failed');
+                }
             });
 
-            // Remove thinking indicator
-            this.removeChatThinking(thinkingId);
+            // Send the prompt request
+            // No need to send context - the AI session remembers the conversation
+            port.postMessage({
+                action: 'PROMPT_AI_STREAM',
+                text: message
+            });
 
-            if (response.success) {
-                this.addChatMessage(response.data.response, 'ai');
-                this.chatHistory.push({
-                    user: message,
-                    ai: response.data.response,
-                    timestamp: Date.now()
-                });
-            } else {
-                this.showError(response.error || 'AI chat failed');
-            }
         } catch (error) {
             this.removeChatThinking(thinkingId);
+            this.removeStreamingMessage(streamingMessageId);
             this.showError(error.message);
         }
     }
@@ -549,6 +626,54 @@ class SidePanelUI {
         }
     }
 
+    // Create a placeholder for streaming AI message
+    createStreamingMessage() {
+        const chatContainer = document.getElementById('chat-messages');
+        const messageId = 'streaming-' + Date.now();
+        const messageDiv = document.createElement('div');
+        messageDiv.id = messageId;
+        messageDiv.className = 'chat-message';
+
+        messageDiv.innerHTML = `
+            <div class="message-ai">
+                <div class="message-content"></div>
+                <div class="message-time">${new Date().toLocaleTimeString()}</div>
+            </div>
+        `;
+
+        chatContainer.appendChild(messageDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+
+        return messageId;
+    }
+
+    // Update streaming message with new chunk (content is the full text accumulated so far)
+    updateStreamingMessage(messageId, content) {
+        const messageDiv = document.getElementById(messageId);
+        if (!messageDiv) return;
+
+        const contentDiv = messageDiv.querySelector('.message-content');
+        if (contentDiv && content) {
+            // Render the full accumulated text
+            const rendered = this.renderMarkdownLite(content);
+            contentDiv.innerHTML = rendered;
+
+            // Auto-scroll to bottom to follow the streaming text
+            const chatContainer = document.getElementById('chat-messages');
+            if (chatContainer) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }
+    }
+
+    // Remove streaming message if error occurs
+    removeStreamingMessage(messageId) {
+        const messageDiv = document.getElementById(messageId);
+        if (messageDiv) {
+            messageDiv.remove();
+        }
+    }
+
     displayChatResult(userMessage, aiResponse) {
         this.addChatMessage(userMessage, 'user');
         this.addChatMessage(aiResponse.response, 'ai');
@@ -567,9 +692,10 @@ class SidePanelUI {
         messageDiv.className = 'chat-message';
         
         const messageClass = type === 'user' ? 'message-user' : 'message-ai';
+        const rendered = this.renderMarkdownLite(content);
         messageDiv.innerHTML = `
             <div class="${messageClass}">
-                <div class="message-content">${this.escapeHtml(content)}</div>
+                <div class="message-content">${rendered}</div>
                 <div class="message-time">${new Date().toLocaleTimeString()}</div>
             </div>
         `;
@@ -629,6 +755,14 @@ class SidePanelUI {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // Minimal markdown renderer: supports **bold** only
+    renderMarkdownLite(text) {
+        // Escape HTML first
+        let safe = this.escapeHtml(text);
+        safe = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); // 
+        return safe;
     }
 
     setButtonLoading(buttonId, isLoading) {

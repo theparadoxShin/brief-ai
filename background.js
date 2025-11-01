@@ -173,6 +173,43 @@ async function handleMessage(request, sender, sendResponse) {
     }
 }
 
+// Handle streaming connections for AI chat
+chrome.runtime.onConnect.addListener((port) => {
+    if (port.name === 'ai-chat-stream') {
+        port.onMessage.addListener(async (msg) => {
+            if (msg.action === 'PROMPT_AI_STREAM') {
+                try {
+                    // Use promptStream with callback for chunks
+                    await aiService.promptStream(
+                        msg.text,
+                        (chunk) => {
+                            // Send each chunk to the side panel
+                            port.postMessage({ type: 'chunk', chunk: chunk });
+                        },
+                        {} // No options needed, session remembers context
+                    );
+
+                    // Signal completion
+                    port.postMessage({ type: 'done' });
+
+                } catch (error) {
+                    console.error('Streaming error:', error);
+                    port.postMessage({ type: 'error', error: error.message });
+                }
+            } else if (msg.action === 'RESET_CHAT') {
+                // Allow resetting the chat session
+                try {
+                    aiService.resetChatSession();
+                    port.postMessage({ type: 'reset-complete' });
+                } catch (error) {
+                    console.error('Reset error:', error);
+                    port.postMessage({ type: 'error', error: error.message });
+                }
+            }
+        });
+    }
+});
+
 // Open side panel on extension icon click
 chrome.action.onClicked.addListener(async (tab) => {
     await chrome.sidePanel.open({ windowId: tab.windowId });

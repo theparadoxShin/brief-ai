@@ -207,32 +207,34 @@
                     <p>Ask questions about selected text or anything else</p>
                 </div>
 
-                <div class="chat-container" id="chat-messages">
-                    <div class="chat-welcome">
-                        <div class="welcome-icon">💬</div>
-                        <h3>Welcome to AI Chat!</h3>
-                        <p>Select text on any webpage and right-click "Ask AI about this" or type your question below.</p>
+                <div class="chat-wrapper">
+                    <div class="chat-container" id="chat-messages">
+                        <div class="chat-welcome">
+                            <div class="welcome-icon">💬</div>
+                            <h3>Welcome to AI Chat!</h3>
+                            <p>Select text on any webpage and right-click "Ask AI about this" or type your question below.</p>
+                        </div>
                     </div>
-                </div>
 
-                <div class="chat-input-section">
-                    <textarea 
-                        id="chat-input" 
-                        class="chat-input" 
-                        placeholder="Type your message..."
-                        rows="3"
-                    ></textarea>
-                    <button class="btn btn-primary" id="chat-send-btn">
-                        <span class="btn-content">
-                            <span class="btn-icon">✨</span>
-                            <span class="btn-text">Send</span>
-                        </span>
-                        <span class="btn-spinner" style="display: none;">
-                            <svg class="spinner-svg" viewBox="0 0 24 24">
-                                <circle class="spinner-circle" cx="12" cy="12" r="10" fill="none" stroke-width="3"></circle>
-                            </svg>
-                        </span>
-                    </button>
+                    <div class="chat-input-section">
+                        <textarea
+                            id="chat-input"
+                            class="chat-input"
+                            placeholder="Type your message..."
+                            rows="3"
+                        ></textarea>
+                        <button class="btn btn-primary" id="chat-send-btn">
+                            <span class="btn-content">
+                                <span class="btn-icon">✨</span>
+                                <span class="btn-text">Send</span>
+                            </span>
+                            <span class="btn-spinner" style="display: none;">
+                                <svg class="spinner-svg" viewBox="0 0 24 24">
+                                    <circle class="spinner-circle" cx="12" cy="12" r="10" fill="none" stroke-width="3"></circle>
+                                </svg>
+                            </span>
+                        </button>
+                    </div>
                 </div>
             </div>
 

@@ -8,6 +8,7 @@ export class AIService {
         this.aiSession = null;
         this.capabilities = null;
         this.translatorPair = null; // { source: 'en', target: 'fr' }
+        this.conversationHistory = []; // Track conversation for context
     }
 
     // ===== SUMMARIZER API =====
@@ -108,16 +109,24 @@ export class AIService {
                 throw new Error('Both source and target languages must be specified');
             }
 
+            // If source and target are identical, short-circuit with a no-op translation
+            if (sourceLanguage === targetLanguage) {
+                return {
+                    originalText: text,
+                    translatedText: text,
+                    sourceLanguage,
+                    targetLanguage,
+                    note: 'source-target-identical',
+                    timestamp: Date.now()
+                };
+            }
+
             // Check availability
             const canTranslate = await Translator.availability({
                 sourceLanguage: sourceLanguage,
                 targetLanguage: targetLanguage
             });
             console.log(`Translation availability from ${sourceLanguage} to ${targetLanguage}: ${canTranslate}`);
-
-            if (canTranslate === 'unavailable') {
-                throw new Error(`Translation from ${sourceLanguage} to ${targetLanguage} is not available`);
-            }
 
             if (canTranslate === 'unavailable') {
                 throw new Error(`Translation from ${sourceLanguage} to ${targetLanguage} is not available`);
@@ -329,8 +338,9 @@ export class AIService {
                 throw err;
             }
 
+            // Create session only once with system prompt
             if (!this.aiSession) {
-                this.aiSession = await LanguageModel.create({
+                const createOpts = {
                     monitor(m) {
                         m.addEventListener('downloadprogress', (e) => {
                             const pct = e.total
@@ -339,20 +349,55 @@ export class AIService {
                             console.log(`LanguageModel download: ${pct}%`);
                         });
                     },
-                });
+                    // Set a helpful system prompt with language instruction
+                    initialPrompts: [
+                        {
+                            role: 'system',
+                            content: 'You are a helpful and friendly AI assistant. IMPORTANT: Always respond in the SAME language as the user\'s message. If the user writes in French, respond in French. If in English, respond in English. Remember the conversation context and provide relevant responses based on previous messages.'
+                        }
+                    ]
+                };
+
+                this.aiSession = await LanguageModel.create(createOpts);
             }
 
+            // Prompt with streaming
             const stream = await this.aiSession.promptStreaming(text, { signal: options.signal });
             let fullResponse = '';
             for await (const chunk of stream) {
-                fullResponse = chunk;
-                if (onChunk) onChunk(chunk);
+                // Each chunk is a fragment - concatenate them to build the full response
+                fullResponse += chunk;
+                console.log('Chunk fragment:', chunk, '| Total length so far:', fullResponse.length);
+                if (onChunk) onChunk(fullResponse);
             }
+
+            console.log('Streaming complete. Final response length:', fullResponse.length);
+
+            // Store conversation in history (for tracking, though session already remembers)
+            this.conversationHistory.push({
+                role: 'user',
+                content: text
+            });
+            this.conversationHistory.push({
+                role: 'assistant',
+                content: fullResponse
+            });
+
             return { prompt: text, response: fullResponse, timestamp: Date.now() };
         } catch (error) {
             console.error('Streaming prompt error:', error);
             throw new Error(`Streaming prompt failed: ${error.message}`);
         }
+    }
+
+    // Reset chat session (useful for "New Chat" feature)
+    resetChatSession() {
+        if (this.aiSession) {
+            this.aiSession.destroy();
+            this.aiSession = null;
+        }
+        this.conversationHistory = [];
+        console.log('Chat session reset');
     }
 
     // ===== CHECKING AVAILABILITY =====
@@ -365,12 +410,44 @@ export class AIService {
         };
 
         try {
-            // Check Summarizer
-            const summarizerCap = await Summarizer;
-            status.summarizer = summarizerCap?.availability() || 'unavailable';
+            // Check Summarizer API
+            if (typeof Summarizer !== 'undefined') {
+                status.summarizer = await Summarizer.availability();
+            } else {
+                status.summarizer = 'unavailable';
+            }
+
+            // Check Translator API
+            // Translator requires language pair, so we check with common pair (en->fr)
+            if (typeof Translator !== 'undefined') {
+                try {
+                    status.translator = await Translator.availability({
+                        sourceLanguage: 'en',
+                        targetLanguage: 'fr'
+                    });
+                } catch (e) {
+                    status.translator = 'unavailable';
+                }
+            } else {
+                status.translator = 'unavailable';
+            }
+
+            // Check Language Detector API
+            if (typeof LanguageDetector !== 'undefined') {
+                status.languageDetector = await LanguageDetector.availability();
+            } else {
+                status.languageDetector = 'unavailable';
+            }
+
+            // Check Prompt API (LanguageModel)
+            if (typeof LanguageModel !== 'undefined') {
+                status.promptAPI = await LanguageModel.availability();
+            } else {
+                status.promptAPI = 'unavailable';
+            }
 
         } catch (error) {
-            console.error('Error checking capabilities:', error);
+            console.error('Error checking AI capabilities:', error);
         }
 
         return status;
