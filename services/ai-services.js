@@ -7,6 +7,7 @@ export class AIService {
         this.languageDetector = null;
         this.aiSession = null;
         this.capabilities = null;
+        this.translatorPair = null; // { source: 'en', target: 'fr' }
     }
 
     // ===== SUMMARIZER API =====
@@ -73,31 +74,60 @@ export class AIService {
     }
 
         // ===== TRANSLATOR API =====
-    async translate(text, targetLanguage = 'en', sourceLanguage = null) {
+    async translate(text, targetLanguage = 'en', sourceLanguage = null, options = {}) {
         try {
 
+            console.log('Translator API called');
+            console.log('Target:', targetLanguage, 'Source:', sourceLanguage);
+
             if ('Translator' in self) {
-            // The Translator API is supported.
+                // The Translator API is supported.
+                console.log('Translator API is supported');
+            } else {
+                throw new Error('Translator API is not supported in this browser');
             }
 
-            // Detect source language if not provided
-            if (!sourceLanguage) {
+            // Detect source language if not provided or set to 'auto'
+            if (!sourceLanguage || sourceLanguage === 'auto') {
+                console.log('Auto-detecting source language...');
                 const detected = await this.detectLanguage(text);
                 sourceLanguage = detected.detectedLanguage;
+                
+                if (!sourceLanguage) {
+                    throw new Error('Could not detect source language. Please specify it manually.');
+                }
+                
+                console.log(`Detected source language: ${sourceLanguage}`);
+            }
+
+            // Normalize and validate language codes (basic BCP-47 lowercase)
+            sourceLanguage = String(sourceLanguage).toLowerCase();
+            targetLanguage = String(targetLanguage).toLowerCase();
+
+            if (!sourceLanguage || !targetLanguage) {
+                throw new Error('Both source and target languages must be specified');
             }
 
             // Check availability
             const canTranslate = await Translator.availability({
-                sourceLanguage,
-                targetLanguage
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage
             });
+            console.log(`Translation availability from ${sourceLanguage} to ${targetLanguage}: ${canTranslate}`);
 
             if (canTranslate === 'unavailable') {
                 throw new Error(`Translation from ${sourceLanguage} to ${targetLanguage} is not available`);
             }
 
-            // Create the translator if not already done
-            if (!this.translator) {
+            if (canTranslate === 'unavailable') {
+                throw new Error(`Translation from ${sourceLanguage} to ${targetLanguage} is not available`);
+            }
+
+            // Recreate translator if pair changed
+            const pairKey = `${sourceLanguage}->${targetLanguage}`;
+            if (!this.translator || this.translatorPair !== pairKey) {
+                this.translator = null;
+                this.translatorPair = pairKey;
                 // Respect user-activation requirement per Built-in AI docs
                 const requireActivation = options.requireActivation !== false; // default true
                 const hasActivation = (typeof navigator !== 'undefined' && navigator.userActivation)
@@ -112,8 +142,8 @@ export class AIService {
 
                 // Create the translator
                 this.translator = await Translator.create({
-                    sourceLanguage,
-                    targetLanguage,
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: targetLanguage,
                     monitor(m) {
                         m.addEventListener('downloadprogress', (e) => {
                             const state = e.loaded * 100 === 100 ? 'completed' : 'in progress';
@@ -141,7 +171,7 @@ export class AIService {
     }
 
     // ===== LANGUAGE DETECTOR API =====
-    async detectLanguage(text) {
+    async detectLanguage(text, options = {}) {
         try {
             // Verify availability
             const canDetect = await LanguageDetector.availability();
@@ -159,7 +189,7 @@ export class AIService {
                     : true; // In some extension contexts, this may be undefined; optimistically allow.
 
                 if (requireActivation && !hasActivation) {
-                    const err = new Error('User activation required to initialize Translator. Trigger from a click/tap/keypress.');
+                    const err = new Error('User activation required to initialize Language Detector. Trigger from a click/tap/keypress.');
                     err.code = 'activation-required';
                     throw err;
                 }
@@ -167,21 +197,26 @@ export class AIService {
                 this.languageDetector = await LanguageDetector.create({
                     monitor(m) {
                         m.addEventListener('downloadprogress', (e) => {
-                        console.log(`Downloaded ${e.loaded * 100}%`);
+                        console.log(`Language Detector: Downloaded ${e.loaded * 100}%`);
                         });
                     },
                 });
             }
 
-            // DDetect language
+            // Detect language
             const results = await this.languageDetector.detect(text);
 
             // Sort by confidence
             results.sort((a, b) => b.confidence - a.confidence);
 
+            // Ensure we have at least one result
+            if (!results || results.length === 0) {
+                throw new Error('Language detection returned no results');
+            }
+
             return {
-                detectedLanguage: results[0]?.detectedLanguage,
-                confidence: results[0]?.confidence,
+                detectedLanguage: results[0].detectedLanguage,
+                confidence: results[0].confidence,
                 allResults: results,
                 text: text.substring(0, 100) + (text.length > 100 ? '...' : '')
             };
@@ -192,39 +227,82 @@ export class AIService {
         }
     }
 
-    // ===== PROMPT API (Gemini Nano) =====
-    async prompt(text, context = null) {
+    // ===== PROMPT API (LanguageModel) =====
+    /**
+     * Prompt the built-in language model.
+     * options:
+     *  - requireActivation: boolean (default true)
+     *  - initialPrompts: Array<{role:'system'|'user'|'assistant', content:string}>
+     *  - temperature?: number
+     *  - topK?: number
+     *  - responseConstraint?: any (JSON Schema)
+     *  - signal?: AbortSignal
+     */
+    async prompt(text, options = {}) {
         try {
-            // Vérifier la disponibilité
-            const canPrompt = await window.ai?.languageModel?.capabilities();
+            // Availability
+            const available = (typeof LanguageModel !== 'undefined')
+                ? await LanguageModel.availability()
+                : 'unavailable';
 
-            if (canPrompt?.available === 'no') {
-                throw new Error('Prompt API is not available. Make sure you are using Chrome 128+ and have enabled the AI features.');
+            if (available === 'unavailable') {
+                throw new Error('Prompt API is not available');
             }
 
-            // Créer une session si pas déjà fait
+            // User activation
+            const requireActivation = options.requireActivation !== false; // default true
+            const hasActivation = (typeof navigator !== 'undefined' && navigator.userActivation)
+                ? navigator.userActivation.isActive
+                : true;
+            if (requireActivation && !hasActivation) {
+                const err = new Error('User activation required to initialize LanguageModel. Trigger from a click/tap/keypress.');
+                err.code = 'activation-required';
+                throw err;
+            }
+
+            // Session creation (with monitor)
             if (!this.aiSession) {
-                this.aiSession = await window.ai.languageModel.create({
-                    systemPrompt: context || 'You are a helpful AI assistant. Provide clear, concise, and accurate responses.'
-                });
+                const params = await LanguageModel.params().catch(() => ({}));
+                const createOpts = {
+                    monitor(m) {
+                        m.addEventListener('downloadprogress', (e) => {
+                            const pct = e.total
+                                ? Math.round((e.loaded / e.total) * 100)
+                                : Math.round(e.loaded * 100);
+                            console.log(`LanguageModel download: ${pct}%`);
+                        });
+                    },
+                };
+
+                // Allow initial prompts
+                if (Array.isArray(options.initialPrompts)) {
+                    createOpts.initialPrompts = options.initialPrompts;
+                }
+
+                // Configure decode parameters if both provided
+                if (typeof options.temperature === 'number' && typeof options.topK === 'number') {
+                    createOpts.temperature = options.temperature;
+                    createOpts.topK = options.topK;
+                }
+
+                if (options.signal) {
+                    createOpts.signal = options.signal;
+                }
+
+                this.aiSession = await LanguageModel.create(createOpts);
             }
 
-            // Attendre le téléchargement si nécessaire
-            if (canPrompt?.available === 'after-download') {
-                console.log('Downloading AI model...');
-                await this.aiSession.ready;
-            }
-
-            // Envoyer le prompt
-            const response = await this.aiSession.prompt(text);
+            // Prompt (non-streaming)
+            const response = await this.aiSession.prompt(text, {
+                responseConstraint: options.responseConstraint,
+                signal: options.signal,
+            });
 
             return {
                 prompt: text,
                 response,
-                context: context || 'default',
-                timestamp: Date.now()
+                timestamp: Date.now(),
             };
-
         } catch (error) {
             console.error('Prompt API error:', error);
             throw new Error(`AI prompt failed: ${error.message}`);
@@ -232,34 +310,45 @@ export class AIService {
     }
 
     // ===== STREAMING PROMPT (for long responses) =====
-    async promptStream(text, onChunk) {
+    async promptStream(text, onChunk, options = {}) {
         try {
-            const canPrompt = await window.ai?.languageModel?.capabilities();
-
-            if (canPrompt?.available === 'no') {
+            const available = (typeof LanguageModel !== 'undefined')
+                ? await LanguageModel.availability()
+                : 'unavailable';
+            if (available === 'unavailable') {
                 throw new Error('Prompt API is not available');
             }
 
-            if (!this.aiSession) {
-                this.aiSession = await window.ai.languageModel.create();
+            const requireActivation = options.requireActivation !== false;
+            const hasActivation = (typeof navigator !== 'undefined' && navigator.userActivation)
+                ? navigator.userActivation.isActive
+                : true;
+            if (requireActivation && !hasActivation) {
+                const err = new Error('User activation required to initialize LanguageModel. Trigger from a click/tap/keypress.');
+                err.code = 'activation-required';
+                throw err;
             }
 
-            const stream = await this.aiSession.promptStreaming(text);
-            let fullResponse = '';
+            if (!this.aiSession) {
+                this.aiSession = await LanguageModel.create({
+                    monitor(m) {
+                        m.addEventListener('downloadprogress', (e) => {
+                            const pct = e.total
+                                ? Math.round((e.loaded / e.total) * 100)
+                                : Math.round(e.loaded * 100);
+                            console.log(`LanguageModel download: ${pct}%`);
+                        });
+                    },
+                });
+            }
 
+            const stream = await this.aiSession.promptStreaming(text, { signal: options.signal });
+            let fullResponse = '';
             for await (const chunk of stream) {
                 fullResponse = chunk;
-                if (onChunk) {
-                    onChunk(chunk);
-                }
+                if (onChunk) onChunk(chunk);
             }
-
-            return {
-                prompt: text,
-                response: fullResponse,
-                timestamp: Date.now()
-            };
-
+            return { prompt: text, response: fullResponse, timestamp: Date.now() };
         } catch (error) {
             console.error('Streaming prompt error:', error);
             throw new Error(`Streaming prompt failed: ${error.message}`);

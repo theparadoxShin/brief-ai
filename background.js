@@ -60,26 +60,53 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     // Process action based on type
     try {
-        let result;
-        
         switch (info.menuItemId) {
-            case 'summarize':
-                result = await aiService.summarize(selectedText);
+            case 'summarize': {
+                const result = await aiService.summarize(selectedText);
+                await chrome.storage.local.set({
+                    lastResult: {
+                        action: 'summarize',
+                        input: selectedText,
+                        output: result,
+                        timestamp: Date.now()
+                    }
+                });
                 break;
-            default:
-                result = { error: 'Unknown action' };
-        }
-
-        // Save result
-        await chrome.storage.local.set({
-            lastResult: {
-                action: info.menuItemId,
-                input: selectedText,
-                output: result,
-                timestamp: Date.now()
             }
-        });
-
+            case 'translate': {
+                // Default: auto-detect source -> English
+                const result = await aiService.translate(selectedText, 'en', 'auto', { requireActivation: true });
+                await chrome.storage.local.set({
+                    lastResult: {
+                        action: 'translate',
+                        input: selectedText,
+                        output: result,
+                        timestamp: Date.now()
+                    }
+                });
+                break;
+            }
+            case 'promptAI': {
+                // Prompt with the selected text directly
+                const result = await aiService.prompt(selectedText, { requireActivation: true });
+                await chrome.storage.local.set({
+                    lastResult: {
+                        action: 'promptAI',
+                        input: selectedText,
+                        output: result,
+                        timestamp: Date.now()
+                    }
+                });
+                break;
+            }
+            default: {
+                // Do nothing, but clear stale unknowns
+                const { lastResult } = await chrome.storage.local.get('lastResult');
+                if (lastResult && (lastResult.error === 'Unknown action' || lastResult.output?.error === 'Unknown action')) {
+                    await chrome.storage.local.remove('lastResult');
+                }
+            }
+        }
     } catch (error) {
         console.error(`Error processing ${info.menuItemId}:`, error);
         await chrome.storage.local.set({ 
@@ -114,18 +141,28 @@ async function handleMessage(request, sender, sendResponse) {
                 break;
 
             case 'TRANSLATE':
+                console.log('Handling TRANSLATE request:', request);
                 const translateResult = await aiService.translate(
                     request.text, 
                     request.targetLanguage, 
-                    request.sourceLanguage
+                    request.sourceLanguage,
+                    request.options || {}
                 );
                 sendResponse({ success: true, data: translateResult });
                 break;
             
-            case 'PROMPT_AI':
-                const promptResult = await aiService.prompt(request.text, request.context);
+            case 'PROMPT_AI': {
+                const opts = request.options || {};
+                // Map legacy 'context' string to initialPrompts as system content
+                if (request.context && typeof request.context === 'string') {
+                    opts.initialPrompts = [
+                        { role: 'system', content: request.context }
+                    ];
+                }
+                const promptResult = await aiService.prompt(request.text, opts);
                 sendResponse({ success: true, data: promptResult });
                 break;
+            }
 
             default:
                 sendResponse({ success: false, error: 'Unknown action' });

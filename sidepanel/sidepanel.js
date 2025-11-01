@@ -212,8 +212,24 @@ class SidePanelUI {
     }
 
     displayResult(result) {
+        if (!result) return;
+
+        // Skip displaying if result is incomplete
+        if (!result.action) return;
+
         if (result.error) {
-            this.showError(result.error);
+            // Log and show error, but don't treat 'Unknown action' as a blocking error on load
+            if (result.error !== 'Unknown action') {
+                this.showError(result.error);
+            } else {
+                console.warn('Skipping stale unknown action result');
+            }
+            return;
+        }
+
+        // If output itself contains an error, surface it and stop
+        if (result.output && result.output.error) {
+            this.showError(result.output.error);
             return;
         }
 
@@ -222,7 +238,7 @@ class SidePanelUI {
                 this.displaySummaryResult(result.output);
                 break;
             case 'translate':
-                this.displayTranslationResult(result.output);
+                if (result.output) this.displayTranslationResult(result.output);
                 break;
             case 'promptAI':
                 this.displayChatResult(result.input, result.output);
@@ -416,7 +432,8 @@ class SidePanelUI {
                 action: 'TRANSLATE',
                 text: input,
                 targetLanguage: targetLang,
-                sourceLanguage: sourceLang === 'auto' ? null : sourceLang
+                sourceLanguage: sourceLang === 'auto' ? 'auto' : sourceLang,
+                options: {}
             });
 
             this.setButtonLoading('translate-btn', false);
@@ -437,10 +454,21 @@ class SidePanelUI {
         const output = document.getElementById('translation-output');
         const info = document.getElementById('translation-info');
 
+        // Ensure data and languages exist
+        if (!data || !data.translatedText) {
+            console.error('Invalid translation result:', JSON.stringify(data));
+            this.showError('Translation result is incomplete');
+            return;
+        }
+
         output.textContent = data.translatedText;
+        
+        const sourceLang = data.sourceLanguage || 'unknown';
+        const targetLang = data.targetLanguage || 'unknown';
+        
         info.innerHTML = `
-            <span>🌍 From: ${this.getLanguageName(data.sourceLanguage)}</span>
-            <span>🎯 To: ${this.getLanguageName(data.targetLanguage)}</span>
+            <span>🌍 From: ${this.getLanguageName(sourceLang)}</span>
+            <span>🎯 To: ${this.getLanguageName(targetLang)}</span>
         `;
 
         resultSection.style.display = 'block';
@@ -448,66 +476,7 @@ class SidePanelUI {
     }
 
 
-
-    // ===== DETECT LANGUAGE =====
-    async handleDetectLanguage() {
-        const input = document.getElementById('detect-input').value.trim();
-        
-        if (!input) {
-            this.showError('Please enter text to analyze');
-            return;
-        }
-
-        this.showLoading('Detecting language...');
-
-        try {
-            const response = await chrome.runtime.sendMessage({
-                action: 'DETECT_LANGUAGE',
-                text: input
-            });
-
-            this.hideLoading();
-
-            if (response.success) {
-                this.displayLanguageResult(response.data);
-            } else {
-                this.showError(response.error || 'Language detection failed');
-            }
-        } catch (error) {
-            this.hideLoading();
-            this.showError(error.message);
-        }
-    }
-
-    displayLanguageResult(data) {
-        const resultSection = document.getElementById('detect-result');
-        const output = document.getElementById('language-output');
-
-        let html = '';
-        
-        // Display top 3 results
-        const topResults = data.allResults.slice(0, 3);
-        topResults.forEach(result => {
-            const percentage = (result.confidence * 100).toFixed(1);
-            html += `
-                <div class="language-item">
-                    <div>
-                        <div class="language-name">${this.getLanguageName(result.detectedLanguage)}</div>
-                        <div class="confidence-bar">
-                            <div class="confidence-fill" style="width: ${percentage}%"></div>
-                        </div>
-                    </div>
-                    <div class="language-confidence">${percentage}%</div>
-                </div>
-            `;
-        });
-
-        output.innerHTML = html;
-        resultSection.style.display = 'block';
-        resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    // ===== AI CHAT =====
+    // ===================== AI CHAT ===============================
     async handleChatSend() {
         const input = document.getElementById('chat-input');
         const message = input.value.trim();
@@ -632,6 +601,11 @@ class SidePanelUI {
     }
 
     getLanguageName(code) {
+        // Handle null, undefined, or empty values
+        if (!code || code === 'null' || code === 'undefined') {
+            return 'Unknown';
+        }
+
         const languages = {
             'en': 'English',
             'fr': 'French',
@@ -688,7 +662,8 @@ class SidePanelUI {
     }
 
     showError(message) {
-        alert(` Error: ${message}`);
+        console.error('UI Error:', message);
+        alert(`Error: ${message}`);
     }
 
     showToast(message) {
