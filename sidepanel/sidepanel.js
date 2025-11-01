@@ -242,7 +242,7 @@ class SidePanelUI {
         const type = document.getElementById('summary-type').value;
         const length = document.getElementById('summary-length').value;
 
-        this.showLoading('Summarizing text...');
+        this.setButtonLoading('summarize-btn', true);
 
         try {
             const response = await chrome.runtime.sendMessage({
@@ -251,7 +251,7 @@ class SidePanelUI {
                 options: { type, length }
             });
 
-            this.hideLoading();
+            this.setButtonLoading('summarize-btn', false);
 
             if (response.success) {
                 this.displaySummaryResult(response.data);
@@ -259,7 +259,7 @@ class SidePanelUI {
                 this.showError(response.error || 'Summarization failed');
             }
         } catch (error) {
-            this.hideLoading();
+            this.setButtonLoading('summarize-btn', false);
             this.showError(error.message);
         }
     }
@@ -409,7 +409,7 @@ class SidePanelUI {
             return;
         }
 
-        this.showLoading('Translating...');
+        this.setButtonLoading('translate-btn', true);
 
         try {
             const response = await chrome.runtime.sendMessage({
@@ -419,7 +419,7 @@ class SidePanelUI {
                 sourceLanguage: sourceLang === 'auto' ? null : sourceLang
             });
 
-            this.hideLoading();
+            this.setButtonLoading('translate-btn', false);
 
             if (response.success) {
                 this.displayTranslationResult(response.data);
@@ -427,7 +427,7 @@ class SidePanelUI {
                 this.showError(response.error || 'Translation failed');
             }
         } catch (error) {
-            this.hideLoading();
+            this.setButtonLoading('translate-btn', false);
             this.showError(error.message);
         }
     }
@@ -447,7 +447,7 @@ class SidePanelUI {
         resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    
+
 
     // ===== DETECT LANGUAGE =====
     async handleDetectLanguage() {
@@ -520,8 +520,8 @@ class SidePanelUI {
         // Add user message to chat
         this.addChatMessage(message, 'user');
 
-        // Show typing indicator
-        this.showLoading('AI is thinking...');
+        // Show AI thinking message in chat
+        const thinkingId = this.addChatThinking();
 
         try {
             const response = await chrome.runtime.sendMessage({
@@ -530,7 +530,8 @@ class SidePanelUI {
                 context: this.getChatContext()
             });
 
-            this.hideLoading();
+            // Remove thinking indicator
+            this.removeChatThinking(thinkingId);
 
             if (response.success) {
                 this.addChatMessage(response.data.response, 'ai');
@@ -543,8 +544,39 @@ class SidePanelUI {
                 this.showError(response.error || 'AI chat failed');
             }
         } catch (error) {
-            this.hideLoading();
+            this.removeChatThinking(thinkingId);
             this.showError(error.message);
+        }
+    }
+
+    addChatThinking() {
+        const chatContainer = document.getElementById('chat-messages');
+        const thinkingDiv = document.createElement('div');
+        const thinkingId = 'thinking-' + Date.now();
+        thinkingDiv.id = thinkingId;
+        thinkingDiv.className = 'chat-message';
+        
+        thinkingDiv.innerHTML = `
+            <div class="message-ai thinking">
+                <div class="thinking-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <div class="message-content">AI is thinking...</div>
+            </div>
+        `;
+
+        chatContainer.appendChild(thinkingDiv);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+        return thinkingId;
+    }
+
+    removeChatThinking(thinkingId) {
+        const thinkingDiv = document.getElementById(thinkingId);
+        if (thinkingDiv) {
+            thinkingDiv.remove();
         }
     }
 
@@ -623,6 +655,24 @@ class SidePanelUI {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    setButtonLoading(buttonId, isLoading) {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+
+        const content = button.querySelector('.btn-content');
+        const spinner = button.querySelector('.btn-spinner');
+
+        if (isLoading) {
+            button.disabled = true;
+            if (content) content.style.display = 'none';
+            if (spinner) spinner.style.display = 'flex';
+        } else {
+            button.disabled = false;
+            if (content) content.style.display = 'flex';
+            if (spinner) spinner.style.display = 'none';
+        }
     }
 
     showLoading(text = 'Processing...') {

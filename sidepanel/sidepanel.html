@@ -75,8 +75,16 @@
                     </div>
 
                     <button class="btn btn-primary" id="summarize-btn">
-                        <span class="btn-icon"></span>
-                        Summarize Text
+                        <span class="btn-content">
+                            <span class="btn-icon">📝</span>
+                            <span class="btn-text">Summarize Text</span>
+                        </span>
+                        <span class="btn-spinner" style="display: none;">
+                            <svg class="spinner-svg" viewBox="0 0 24 24">
+                                <circle class="spinner-circle" cx="12" cy="12" r="10" fill="none" stroke-width="3"></circle>
+                            </svg>
+                            <span class="btn-text">Processing...</span>
+                        </span>
                     </button>
                 </div>
 
@@ -165,8 +173,16 @@
                     </div>
 
                     <button class="btn btn-primary" id="translate-btn">
-                        <span class="btn-icon">🌐</span>
-                        Translate
+                        <span class="btn-content">
+                            <span class="btn-icon">🌐</span>
+                            <span class="btn-text">Translate</span>
+                        </span>
+                        <span class="btn-spinner" style="display: none;">
+                            <svg class="spinner-svg" viewBox="0 0 24 24">
+                                <circle class="spinner-circle" cx="12" cy="12" r="10" fill="none" stroke-width="3"></circle>
+                            </svg>
+                            <span class="btn-text">Translating...</span>
+                        </span>
                     </button>
                 </div>
 
@@ -207,13 +223,20 @@
                         rows="3"
                     ></textarea>
                     <button class="btn btn-primary" id="chat-send-btn">
-                        <span class="btn-icon">✨</span>
-                        Send
+                        <span class="btn-content">
+                            <span class="btn-icon">✨</span>
+                            <span class="btn-text">Send</span>
+                        </span>
+                        <span class="btn-spinner" style="display: none;">
+                            <svg class="spinner-svg" viewBox="0 0 24 24">
+                                <circle class="spinner-circle" cx="12" cy="12" r="10" fill="none" stroke-width="3"></circle>
+                            </svg>
+                        </span>
                     </button>
                 </div>
             </div>
 
-            
+
 
         </main>
 
