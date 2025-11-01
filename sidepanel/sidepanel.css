@@ -449,7 +449,7 @@ body {
 
 /* ===== CHAT ===== */
 .chat-container {
-    height: 400px;
+    height: 100%;
     overflow-y: auto;
     margin-bottom: 1rem;
     padding: 1rem;

@@ -78,42 +78,53 @@ export class AIService {
 
             if ('Translator' in self) {
             // The Translator API is supported.
-                throw new Error('Translator API is not available in this context');
             }
 
-            // Détecter la langue source si non fournie
+            // Detect source language if not provided
             if (!sourceLanguage) {
                 const detected = await this.detectLanguage(text);
                 sourceLanguage = detected.detectedLanguage;
             }
 
-            // Vérifier la disponibilité
-            const canTranslate = await window.translation?.canTranslate({
+            // Check availability
+            const canTranslate = await Translator.availability({
                 sourceLanguage,
                 targetLanguage
             });
 
-            if (canTranslate === 'no') {
+            if (canTranslate === 'unavailable') {
                 throw new Error(`Translation from ${sourceLanguage} to ${targetLanguage} is not available`);
             }
 
-            // Créer le translator
-            const translator = await window.translation.createTranslator({
-                sourceLanguage,
-                targetLanguage
-            });
+            // Create the translator if not already done
+            if (!this.translator) {
+                // Respect user-activation requirement per Built-in AI docs
+                const requireActivation = options.requireActivation !== false; // default true
+                const hasActivation = (typeof navigator !== 'undefined' && navigator.userActivation)
+                    ? navigator.userActivation.isActive
+                    : true; // In some extension contexts, this may be undefined; optimistically allow.
 
-            // Attendre le téléchargement si nécessaire
-            if (canTranslate === 'after-download') {
-                console.log('Downloading translation model...');
-                translator.addEventListener('downloadprogress', (e) => {
-                    console.log(`Translation model download: ${e.loaded}/${e.total}`);
+                if (requireActivation && !hasActivation) {
+                    const err = new Error('User activation required to initialize Translator. Trigger from a click/tap/keypress.');
+                    err.code = 'activation-required';
+                    throw err;
+                }
+
+                // Create the translator
+                this.translator = await Translator.create({
+                    sourceLanguage,
+                    targetLanguage,
+                    monitor(m) {
+                        m.addEventListener('downloadprogress', (e) => {
+                            const state = e.loaded * 100 === 100 ? 'completed' : 'in progress';
+                            console.log(`Downloaded ${e.loaded * 100}% (${state})`);
+                        });
+                    }
                 });
-                await translator.ready;
             }
 
-            // Traduire le texte
-            const translatedText = await translator.translate(text);
+            // Translate the text
+            const translatedText = await this.translator.translate(text);
 
             return {
                 originalText: text,
@@ -132,28 +143,40 @@ export class AIService {
     // ===== LANGUAGE DETECTOR API =====
     async detectLanguage(text) {
         try {
-            // Vérifier la disponibilité
-            const canDetect = await window.translation?.canDetect();
+            // Verify availability
+            const canDetect = await LanguageDetector.availability();
 
-            if (canDetect === 'no') {
+            if (canDetect === 'unavailable') {
                 throw new Error('Language detection is not available');
             }
 
-            // Créer le detector si pas déjà fait
+            // Create the detector if not already done
             if (!this.languageDetector) {
-                this.languageDetector = await window.translation.createDetector();
+                // Respect user-activation requirement per Built-in AI docs
+                const requireActivation = options.requireActivation !== false; // default true
+                const hasActivation = (typeof navigator !== 'undefined' && navigator.userActivation)
+                    ? navigator.userActivation.isActive
+                    : true; // In some extension contexts, this may be undefined; optimistically allow.
+
+                if (requireActivation && !hasActivation) {
+                    const err = new Error('User activation required to initialize Translator. Trigger from a click/tap/keypress.');
+                    err.code = 'activation-required';
+                    throw err;
+                }
+
+                this.languageDetector = await LanguageDetector.create({
+                    monitor(m) {
+                        m.addEventListener('downloadprogress', (e) => {
+                        console.log(`Downloaded ${e.loaded * 100}%`);
+                        });
+                    },
+                });
             }
 
-            // Attendre le téléchargement si nécessaire
-            if (canDetect === 'after-download') {
-                console.log('Downloading language detection model...');
-                await this.languageDetector.ready;
-            }
-
-            // Détecter la langue
+            // DDetect language
             const results = await this.languageDetector.detect(text);
 
-            // Trier par confiance
+            // Sort by confidence
             results.sort((a, b) => b.confidence - a.confidence);
 
             return {
@@ -208,7 +231,7 @@ export class AIService {
         }
     }
 
-    // ===== STREAMING PROMPT (pour de longues réponses) =====
+    // ===== STREAMING PROMPT (for long responses) =====
     async promptStream(text, onChunk) {
         try {
             const canPrompt = await window.ai?.languageModel?.capabilities();
@@ -255,7 +278,7 @@ export class AIService {
         try {
             // Check Summarizer
             const summarizerCap = await Summarizer;
-            status.summarizer = summarizerCap?.availability();
+            status.summarizer = summarizerCap?.availability() || 'unavailable';
 
         } catch (error) {
             console.error('Error checking capabilities:', error);

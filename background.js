@@ -113,6 +113,20 @@ async function handleMessage(request, sender, sendResponse) {
                 sendResponse({ success: true, data: summaryResult });
                 break;
 
+            case 'TRANSLATE':
+                const translateResult = await aiService.translate(
+                    request.text, 
+                    request.targetLanguage, 
+                    request.sourceLanguage
+                );
+                sendResponse({ success: true, data: translateResult });
+                break;
+            
+            case 'PROMPT_AI':
+                const promptResult = await aiService.prompt(request.text, request.context);
+                sendResponse({ success: true, data: promptResult });
+                break;
+
             default:
                 sendResponse({ success: false, error: 'Unknown action' });
         }
@@ -122,7 +136,7 @@ async function handleMessage(request, sender, sendResponse) {
     }
 }
 
-// Gestion du clic sur l'icône de l'extension
+// Open side panel on extension icon click
 chrome.action.onClicked.addListener(async (tab) => {
     await chrome.sidePanel.open({ windowId: tab.windowId });
 });
