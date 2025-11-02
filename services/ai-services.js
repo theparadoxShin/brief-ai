@@ -12,14 +12,6 @@ export class AIService {
     }
 
     // ===== SUMMARIZER API =====
-    /**
-     * Summarize text using Chrome's built-in Summarizer API.
-     * Options:
-     *  - type: 'tldr' | 'key-points' | 'teaser' | 'headline'
-     *  - format: 'plain-text' | 'markdown'
-     *  - length: 'short' | 'medium' | 'long'
-     *  - requireActivation: boolean (default: true) — when true, ensures a user gesture is present before creating the model
-     */
     async summarize(text, options = {}) {
         try {
             // Verify availability
@@ -179,6 +171,117 @@ export class AIService {
         }
     }
 
+    // ===== STREAMING TRANSLATOR API =====
+    async translateStream(text, targetLanguage = 'en', sourceLanguage = null, onChunk, options = {}) {
+        try {
+            console.log('Streaming Translator API called');
+            console.log('Target:', targetLanguage, 'Source:', sourceLanguage);
+
+            if (!('Translator' in self)) {
+                throw new Error('Translator API is not supported in this browser');
+            }
+
+            // Detect source language if not provided or set to 'auto'
+            if (!sourceLanguage || sourceLanguage === 'auto') {
+                console.log('Auto-detecting source language...');
+                const detected = await this.detectLanguage(text);
+                sourceLanguage = detected.detectedLanguage;
+
+                if (!sourceLanguage) {
+                    throw new Error('Could not detect source language. Please specify it manually.');
+                }
+
+                console.log(`Detected source language: ${sourceLanguage}`);
+            }
+
+            // Normalize and validate language codes
+            sourceLanguage = String(sourceLanguage).toLowerCase();
+            targetLanguage = String(targetLanguage).toLowerCase();
+
+            if (!sourceLanguage || !targetLanguage) {
+                throw new Error('Both source and target languages must be specified');
+            }
+
+            // If source and target are identical, return original text
+            if (sourceLanguage === targetLanguage) {
+                if (onChunk) onChunk(text);
+                return {
+                    originalText: text,
+                    translatedText: text,
+                    sourceLanguage,
+                    targetLanguage,
+                    note: 'source-target-identical',
+                    timestamp: Date.now()
+                };
+            }
+
+            // Check availability
+            const canTranslate = await Translator.availability({
+                sourceLanguage: sourceLanguage,
+                targetLanguage: targetLanguage
+            });
+
+            if (canTranslate === 'unavailable') {
+                throw new Error(`Translation from ${sourceLanguage} to ${targetLanguage} is not available`);
+            }
+
+            // Recreate translator if pair changed
+            const pairKey = `${sourceLanguage}->${targetLanguage}`;
+            if (!this.translator || this.translatorPair !== pairKey) {
+                this.translator = null;
+                this.translatorPair = pairKey;
+
+                const requireActivation = options.requireActivation !== false;
+                const hasActivation = (typeof navigator !== 'undefined' && navigator.userActivation)
+                    ? navigator.userActivation.isActive
+                    : true;
+
+                if (requireActivation && !hasActivation) {
+                    const err = new Error('User activation required to initialize Translator. Trigger from a click/tap/keypress.');
+                    err.code = 'activation-required';
+                    throw err;
+                }
+
+                // Create the translator
+                this.translator = await Translator.create({
+                    sourceLanguage: sourceLanguage,
+                    targetLanguage: targetLanguage,
+                    monitor(m) {
+                        m.addEventListener('downloadprogress', (e) => {
+                            const state = e.loaded * 100 === 100 ? 'completed' : 'in progress';
+                            console.log(`Translation model: Downloaded ${e.loaded * 100}% (${state})`);
+                        });
+                    }
+                });
+            }
+
+            // Stream the translation
+            const stream = await this.translator.translateStreaming(text);
+            let fullTranslation = '';
+
+            for await (const chunk of stream) {
+                // Concatenate chunks to build full translation
+                fullTranslation += chunk;
+                console.log('Translation chunk:', chunk, '| Total length:', fullTranslation.length);
+                if (onChunk) onChunk(fullTranslation);
+            }
+
+            console.log('Translation streaming complete. Final length:', fullTranslation.length);
+
+            return {
+                originalText: text,
+                translatedText: fullTranslation,
+                sourceLanguage,
+                targetLanguage,
+                timestamp: Date.now()
+            };
+
+        } catch (error) {
+            console.error('Streaming translation error:', error);
+            throw new Error(`Streaming translation failed: ${error.message}`);
+        }
+    }
+
     // ===== LANGUAGE DETECTOR API =====
     async detectLanguage(text, options = {}) {
         try {
@@ -237,16 +340,6 @@ export class AIService {
     }
 
     // ===== PROMPT API (LanguageModel) =====
-    /**
-     * Prompt the built-in language model.
-     * options:
-     *  - requireActivation: boolean (default true)
-     *  - initialPrompts: Array<{role:'system'|'user'|'assistant', content:string}>
-     *  - temperature?: number
-     *  - topK?: number
-     *  - responseConstraint?: any (JSON Schema)
-     *  - signal?: AbortSignal
-     */
     async prompt(text, options = {}) {
         try {
             // Availability

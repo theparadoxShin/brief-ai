@@ -55,69 +55,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         timestamp: Date.now()
     };
 
-    // Save current action to storage
+    // Save current action to storage - sidepanel will handle it
     await chrome.storage.local.set({ currentAction: action });
-
-    // Process action based on type
-    try {
-        switch (info.menuItemId) {
-            case 'summarize': {
-                const result = await aiService.summarize(selectedText);
-                await chrome.storage.local.set({
-                    lastResult: {
-                        action: 'summarize',
-                        input: selectedText,
-                        output: result,
-                        timestamp: Date.now()
-                    }
-                });
-                break;
-            }
-            case 'translate': {
-                // Default: auto-detect source -> English
-                const result = await aiService.translate(selectedText, 'en', 'auto', { requireActivation: true });
-                await chrome.storage.local.set({
-                    lastResult: {
-                        action: 'translate',
-                        input: selectedText,
-                        output: result,
-                        timestamp: Date.now()
-                    }
-                });
-                break;
-            }
-            case 'promptAI': {
-                // Prompt with the selected text directly
-                const result = await aiService.prompt(selectedText, { requireActivation: true });
-                await chrome.storage.local.set({
-                    lastResult: {
-                        action: 'promptAI',
-                        input: selectedText,
-                        output: result,
-                        timestamp: Date.now()
-                    }
-                });
-                break;
-            }
-            default: {
-                // Do nothing, but clear stale unknowns
-                const { lastResult } = await chrome.storage.local.get('lastResult');
-                if (lastResult && (lastResult.error === 'Unknown action' || lastResult.output?.error === 'Unknown action')) {
-                    await chrome.storage.local.remove('lastResult');
-                }
-            }
-        }
-    } catch (error) {
-        console.error(`Error processing ${info.menuItemId}:`, error);
-        await chrome.storage.local.set({ 
-            lastResult: {
-                action: info.menuItemId,
-                input: selectedText,
-                error: error.message,
-                timestamp: Date.now()
-            }
-        });
-    }
 });
 
 // Listen for messages from content scripts or side panel
@@ -173,7 +112,7 @@ async function handleMessage(request, sender, sendResponse) {
     }
 }
 
-// Handle streaming connections for AI chat
+// Handle streaming connections for AI chat and translation
 chrome.runtime.onConnect.addListener((port) => {
     if (port.name === 'ai-chat-stream') {
         port.onMessage.addListener(async (msg) => {
@@ -203,6 +142,31 @@ chrome.runtime.onConnect.addListener((port) => {
                     port.postMessage({ type: 'reset-complete' });
                 } catch (error) {
                     console.error('Reset error:', error);
+                    port.postMessage({ type: 'error', error: error.message });
+                }
+            }
+        });
+    } else if (port.name === 'translate-stream') {
+        port.onMessage.addListener(async (msg) => {
+            if (msg.action === 'TRANSLATE_STREAM') {
+                try {
+                    // Use translateStream with callback for chunks
+                    await aiService.translateStream(
+                        msg.text,
+                        msg.targetLanguage,
+                        msg.sourceLanguage,
+                        (chunk) => {
+                            // Send each chunk to the side panel
+                            port.postMessage({ type: 'chunk', chunk: chunk });
+                        },
+                        {} // No special options
+                    );
+
+                    // Signal completion
+                    port.postMessage({ type: 'done' });
+
+                } catch (error) {
+                    console.error('Translation streaming error:', error);
                     port.postMessage({ type: 'error', error: error.message });
                 }
             }
