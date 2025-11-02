@@ -418,6 +418,56 @@ body {
     gap: 0.25rem;
 }
 
+/* ===== REAL-TIME TRANSLATION ===== */
+.translate-box {
+    margin-bottom: 1rem;
+}
+
+.translate-box-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.translate-box-header label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.translate-textarea {
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+}
+
+.translate-status-bar {
+    padding: 0.5rem;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    min-height: 1.5rem;
+}
+
+#translation-status.translating {
+    color: var(--primary-color);
+    font-weight: 500;
+}
+
+#translation-status.translating::before {
+    content: '⏳ ';
+}
+
+.translate-output {
+    min-height: 120px;
+}
+
+.translate-placeholder {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 /* ===== LANGUAGE RESULTS ===== */
 .language-results {
     display: flex;

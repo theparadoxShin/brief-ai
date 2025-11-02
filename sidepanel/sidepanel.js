@@ -21,12 +21,9 @@ class SidePanelUI {
         
         // Check AI availability
         this.checkAIStatus();
-        
+
         // Listen for context menu actions
         this.listenForContextActions();
-        
-        // Load last result if available
-        this.loadLastResult();
 
         // Ensure voices are loaded for TTS
         this.ensureVoicesLoaded();
@@ -73,9 +70,31 @@ class SidePanelUI {
             this.handleSummarize();
         });
 
-        // Translate button
-        document.getElementById('translate-btn').addEventListener('click', () => {
-            this.handleTranslate();
+        // Real-time translation (no button, auto-translate on input)
+        let translateTimeout = null;
+        const translateInput = document.getElementById('translate-input');
+        const sourceLang = document.getElementById('source-lang');
+        const targetLang = document.getElementById('target-lang');
+
+        // Translate on input with debouncing
+        translateInput.addEventListener('input', () => {
+            clearTimeout(translateTimeout);
+            translateTimeout = setTimeout(() => {
+                this.handleRealtimeTranslate();
+            }, 500); // Wait 500ms after user stops typing
+        });
+
+        // Translate when language changes
+        sourceLang.addEventListener('change', () => {
+            if (translateInput.value.trim()) {
+                this.handleRealtimeTranslate();
+            }
+        });
+
+        targetLang.addEventListener('change', () => {
+            if (translateInput.value.trim()) {
+                this.handleRealtimeTranslate();
+            }
         });
 
         // Chat send button
@@ -115,8 +134,33 @@ class SidePanelUI {
             stopBtn.addEventListener('click', () => this.handleStopSummary());
         }
 
-        document.getElementById('copy-translation').addEventListener('click', () => {
-            this.copyToClipboard('translation-output');
+        // Copy source text button
+        document.getElementById('copy-source').addEventListener('click', async () => {
+            const input = document.getElementById('translate-input');
+            const text = input.value;
+            try {
+                await navigator.clipboard.writeText(text);
+                this.showToast('Source text copied! ✓');
+            } catch (error) {
+                console.error('Copy failed:', error);
+            }
+        });
+
+        // Copy translation button
+        document.getElementById('copy-translation').addEventListener('click', async () => {
+            const output = document.getElementById('translation-output');
+            const text = output.textContent || output.innerText;
+            // Remove placeholder text if present
+            if (text.includes('Translation will appear here')) {
+                this.showToast('No translation to copy');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(text);
+                this.showToast('Translation copied! ✓');
+            } catch (error) {
+                console.error('Copy failed:', error);
+            }
         });
     }
 
@@ -207,23 +251,7 @@ class SidePanelUI {
                 const action = changes.currentAction.newValue;
                 this.handleContextAction(action);
             }
-            
-            if (namespace === 'local' && changes.lastResult) {
-                const result = changes.lastResult.newValue;
-                this.displayResult(result);
-            }
         });
-    }
-
-    async loadLastResult() {
-        try {
-            const { lastResult } = await chrome.storage.local.get('lastResult');
-            if (lastResult) {
-                this.displayResult(lastResult);
-            }
-        } catch (error) {
-            console.error('Error loading last result:', error);
-        }
     }
 
     handleContextAction(action) {
@@ -247,53 +275,28 @@ class SidePanelUI {
             const input = document.getElementById(inputId);
             if (input) {
                 input.value = action.text;
+
+                // Auto-trigger the action based on type
+                setTimeout(() => {
+                    switch (action.type) {
+                        case 'summarize':
+                            // Auto-click summarize button
+                            this.handleSummarize();
+                            break;
+                        case 'translate':
+                            // Auto-trigger real-time translation
+                            this.handleRealtimeTranslate();
+                            break;
+                        case 'promptAI':
+                            // Auto-send to AI chat
+                            this.handleChatSend();
+                            break;
+                    }
+                }, 100); // Small delay to ensure input is filled
             }
         }
     }
 
-    displayResult(result) {
-        if (!result) return;
-
-        // Skip displaying if result is incomplete
-        if (!result.action) return;
-
-        if (result.error) {
-            // Special-case: suppress noisy same-language translation error from older runs
-            if (result.action === 'translate' && /Translation from\s+([a-z-]+)\s+to\s+\1\s+is not available/i.test(result.error)) {
-                console.warn('Suppressing same-language translation error');
-                // Clear stale error to avoid re-alerting on future loads
-                try { chrome.storage?.local?.remove?.('lastResult'); } catch {}
-                this.showToast('Source and target languages are the same. Showing original text.');
-                return;
-            }
-
-            // Log and show error, but don't treat 'Unknown action' as a blocking error on load
-            if (result.error !== 'Unknown action') {
-                this.showError(result.error);
-            } else {
-                console.warn('Skipping stale unknown action result');
-            }
-            return;
-        }
-
-        // If output itself contains an error, surface it and stop
-        if (result.output && result.output.error) {
-            this.showError(result.output.error);
-            return;
-        }
-
-        switch (result.action) {
-            case 'summarize':
-                this.displaySummaryResult(result.output);
-                break;
-            case 'translate':
-                if (result.output) this.displayTranslationResult(result.output);
-                break;
-            case 'promptAI':
-                this.displayChatResult(result.input, result.output);
-                break;
-        }
-    }
 
     // ===== SUMMARIZE =====
     async handleSummarize() {
@@ -463,72 +466,77 @@ class SidePanelUI {
     }
 
 
-    // ======================= TRANSLATE =============================
-    async handleTranslate() {
+    // ======================= TRANSLATE (Real-time Streaming) =============================
+    async handleRealtimeTranslate() {
         const input = document.getElementById('translate-input').value.trim();
-        
+        const output = document.getElementById('translation-output');
+        const status = document.getElementById('translation-status');
+        const resultSection = document.getElementById('translate-result');
+
+        // Clear output if input is empty
         if (!input) {
-            this.showError('Please enter text to translate');
+            output.innerHTML = '<div class="translate-placeholder">Translation will appear here...</div>';
+            status.textContent = '';
+            resultSection.style.display = 'none';
             return;
         }
+
+        // Show result section
+        resultSection.style.display = 'block';
 
         const sourceLang = document.getElementById('source-lang').value;
         const targetLang = document.getElementById('target-lang').value;
 
+        // Same language check
         if (sourceLang === targetLang && sourceLang !== 'auto') {
-            this.showError('Source and target languages must be different');
+            output.textContent = input;
+            status.textContent = 'Same language';
             return;
         }
 
-        this.setButtonLoading('translate-btn', true);
+        // Show translating status
+        status.textContent = 'Translating...';
+        status.className = 'translating';
+        output.innerHTML = '<div class="translate-placeholder">Translating...</div>';
 
         try {
-            const response = await chrome.runtime.sendMessage({
-                action: 'TRANSLATE',
-                text: input,
-                targetLanguage: targetLang,
-                sourceLanguage: sourceLang === 'auto' ? 'auto' : sourceLang,
-                options: {}
+            // Create connection port for streaming
+            const port = chrome.runtime.connect({ name: 'translate-stream' });
+            let fullTranslation = '';
+
+            // Listen for chunks
+            port.onMessage.addListener((msg) => {
+                if (msg.type === 'chunk') {
+                    fullTranslation = msg.chunk;
+                    // Update output with streamed translation
+                    output.textContent = fullTranslation;
+                } else if (msg.type === 'done') {
+                    // Translation complete
+                    status.textContent = 'Translated';
+                    status.className = '';
+                } else if (msg.type === 'error') {
+                    status.textContent = 'Error';
+                    status.className = '';
+                    output.innerHTML = `<div class="translate-placeholder" style="color: var(--danger-color);">${msg.error}</div>`;
+                }
             });
 
-            this.setButtonLoading('translate-btn', false);
+            // Send translation request
+            port.postMessage({
+                action: 'TRANSLATE_STREAM',
+                text: input,
+                targetLanguage: targetLang,
+                sourceLanguage: sourceLang === 'auto' ? 'auto' : sourceLang
+            });
 
-            if (response.success) {
-                this.displayTranslationResult(response.data);
-            } else {
-                this.showError(response.error || 'Translation failed');
-            }
         } catch (error) {
-            this.setButtonLoading('translate-btn', false);
-            this.showError(error.message);
+            console.error('Translation error:', error);
+            status.textContent = 'Error';
+            status.className = '';
+            output.innerHTML = `<div class="translate-placeholder" style="color: var(--danger-color);">Translation failed: ${error.message}</div>`;
         }
     }
 
-    displayTranslationResult(data) {
-        const resultSection = document.getElementById('translate-result');
-        const output = document.getElementById('translation-output');
-        const info = document.getElementById('translation-info');
-
-        // Ensure data and languages exist
-        if (!data || !data.translatedText) {
-            console.error('Invalid translation result:', JSON.stringify(data));
-            this.showError('Translation result is incomplete');
-            return;
-        }
-
-        output.textContent = data.translatedText;
-        
-        const sourceLang = data.sourceLanguage || 'unknown';
-        const targetLang = data.targetLanguage || 'unknown';
-        
-        info.innerHTML = `
-            <span>🌍 From: ${this.getLanguageName(sourceLang)}</span>
-            <span>🎯 To: ${this.getLanguageName(targetLang)}</span>
-        `;
-
-        resultSection.style.display = 'block';
-        resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
 
 
     // ===================== AI CHAT ===============================
@@ -672,11 +680,6 @@ class SidePanelUI {
         if (messageDiv) {
             messageDiv.remove();
         }
-    }
-
-    displayChatResult(userMessage, aiResponse) {
-        this.addChatMessage(userMessage, 'user');
-        this.addChatMessage(aiResponse.response, 'ai');
     }
 
     addChatMessage(content, type) {
