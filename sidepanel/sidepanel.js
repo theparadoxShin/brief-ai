@@ -13,6 +13,10 @@ class SidePanelUI {
     }
 
     init() {
+
+        // Set footer year
+        document.getElementById('footerYear').textContent = new Date().getFullYear();
+
         // Initialize tabs
         this.initTabs();
         
@@ -247,53 +251,79 @@ class SidePanelUI {
     listenForContextActions() {
         // Listen for storage changes (when context menu is used)
         chrome.storage.onChanged.addListener((changes, namespace) => {
+            console.log('Storage changed:', changes, namespace);
             if (namespace === 'local' && changes.currentAction) {
                 const action = changes.currentAction.newValue;
-                this.handleContextAction(action);
+                console.log('Current action received:', action);
+                if (action && action.type && action.text) {
+                    this.handleContextAction(action);
+                } else {
+                    console.warn('Invalid action received:', action);
+                }
             }
         });
     }
 
     handleContextAction(action) {
-        // Switch to appropriate tab
+        console.log('Handling context action:', action);
+
+        // Map context menu action types to tab data-tab attributes
         const tabMap = {
             'summarize': 'summarize',
             'translate': 'translate',
             'promptAI': 'chat'
         };
 
+        // Map action types to input IDs
+        const inputMap = {
+            'summarize': 'summarize-input',
+            'translate': 'translate-input',
+            'promptAI': 'chat-input'
+        };
+
         const targetTab = tabMap[action.type];
-        if (targetTab) {
-            // Click the tab button to switch
-            const tabBtn = document.querySelector(`[data-tab="${targetTab}"]`);
-            if (tabBtn) {
-                tabBtn.click();
-            }
+        const inputId = inputMap[action.type];
 
-            // Fill the input with the selected text
-            const inputId = `${targetTab === 'chat' ? 'chat' : action.type}-input`;
-            const input = document.getElementById(inputId);
-            if (input) {
-                input.value = action.text;
+        console.log('Target tab:', targetTab, '| Input ID:', inputId);
 
-                // Auto-trigger the action based on type
-                setTimeout(() => {
-                    switch (action.type) {
-                        case 'summarize':
-                            // Auto-click summarize button
-                            this.handleSummarize();
-                            break;
-                        case 'translate':
-                            // Auto-trigger real-time translation
-                            this.handleRealtimeTranslate();
-                            break;
-                        case 'promptAI':
-                            // Auto-send to AI chat
-                            this.handleChatSend();
-                            break;
-                    }
-                }, 100); // Small delay to ensure input is filled
-            }
+        if (!targetTab || !inputId) {
+            console.error('Unknown action type:', action.type);
+            return;
+        }
+
+        // Switch to the appropriate tab
+        const tabBtn = document.querySelector(`[data-tab="${targetTab}"]`);
+        if (tabBtn) {
+            console.log('Clicking tab button:', targetTab);
+            tabBtn.click();
+        } else {
+            console.error('Tab button not found for:', targetTab);
+            return;
+        }
+
+        // Fill the input with the selected text
+        const input = document.getElementById(inputId);
+        if (input) {
+            console.log('Filling input with text:', action.text.substring(0, 50) + '...');
+            input.value = action.text;
+
+            // Auto-trigger the action based on type after a short delay
+            setTimeout(() => {
+                console.log('Auto-triggering action:', action.type);
+                switch (action.type) {
+                    case 'summarize':
+                        this.handleSummarize();
+                        break;
+                    case 'translate':
+                        this.handleRealtimeTranslate();
+                        break;
+                    case 'promptAI':
+                        this.handleChatSend();
+                        break;
+                }
+            }, 200); // Delay to ensure tab switch and input fill are complete
+        } else {
+            console.error('Input element not found:', inputId);
         }
     }
 
