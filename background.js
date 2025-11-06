@@ -7,17 +7,17 @@ const aiService = new AIService();
 const MENU_ITEMS = [
     {
         id: "summarize",
-        title: "📝 Summarize Selection",
+        title: "Summarize Selection",
         contexts: ["selection"]
     },
     {
         id: "translate",
-        title: "🌐 Translate Selection",
+        title: "Translate Selection",
         contexts: ["selection"]
     },
     {
         id: "promptAI",
-        title: "💬 Ask AI about this",
+        title: "Ask AI about this",
         contexts: ["selection"]
     }
 ];

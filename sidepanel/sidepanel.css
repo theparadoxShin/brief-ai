@@ -137,7 +137,18 @@ body {
 }
 
 .tab-icon {
-    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tab-icon svg {
+    transition: transform 0.2s ease;
+}
+
+.tab-btn.active .tab-icon svg,
+.tab-btn:hover .tab-icon svg {
+    transform: scale(1.1);
 }
 
 .tab-label {
@@ -323,7 +334,13 @@ body {
 }
 
 .btn-icon {
-    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    margin-right: 0.5rem;
+}
+
+.btn-icon svg {
+    display: block;
 }
 
 .btn-icon-only {
@@ -538,8 +555,15 @@ body {
 }
 
 .welcome-icon {
-    font-size: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     margin-bottom: 1rem;
+    opacity: 0.6;
+}
+
+.welcome-icon svg {
+    color: var(--primary-color);
 }
 
 .chat-welcome h3 {
@@ -708,4 +732,19 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-secondary);
+}
+
+/* ===== FOOTER ===== */
+.footer {
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    padding: 0.75rem 1.25rem;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.footer p {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin: 0;
 }

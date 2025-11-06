@@ -13,6 +13,10 @@ class SidePanelUI {
     }
 
     init() {
+
+        // Set footer year
+        document.getElementById('footerYear').textContent = new Date().getFullYear();
+
         // Initialize tabs
         this.initTabs();
         

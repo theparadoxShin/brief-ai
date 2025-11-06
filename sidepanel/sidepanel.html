@@ -11,8 +11,8 @@
         <!-- Header -->
         <header class="header">
             <div class="logo">
-                <h1>✨ Brief AI</h1>
-                <p class="tagline">AI-Powered Text Tools</p>
+                <h1>Brief AI</h1>
+                <p class="tagline">AI-Powered Tools</p>
             </div>
             <div class="status-indicator" id="statusIndicator">
                 <span class="status-dot"></span>
@@ -23,15 +23,33 @@
         <!-- Tabs Navigation -->
         <nav class="tabs">
             <button class="tab-btn active" data-tab="summarize">
-                <span class="tab-icon">📝</span>
+                <span class="tab-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                </span>
                 <span class="tab-label">Summarize</span>
             </button>
             <button class="tab-btn" data-tab="translate">
-                <span class="tab-icon">🌐</span>
+                <span class="tab-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="2" y1="12" x2="22" y2="12"></line>
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                    </svg>
+                </span>
                 <span class="tab-label">Translate</span>
             </button>
             <button class="tab-btn" data-tab="chat">
-                <span class="tab-icon">💬</span>
+                <span class="tab-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </span>
                 <span class="tab-label">AI Chat</span>
             </button>
         </nav>
@@ -40,10 +58,6 @@
         <main class="content">
             <!-- Summarize Tab -->
             <div class="tab-content active" id="summarize-tab">
-                <div class="feature-header">
-                    <h2>Text Summarizer</h2>
-                    <p>Get concise summaries of long texts</p>
-                </div>
 
                 <div class="input-section">
                     <label for="summarize-input">Text to summarize:</label>
@@ -58,10 +72,10 @@
                         <div class="option-group">
                             <label for="summary-type">Type:</label>
                             <select id="summary-type">
-                                <option value="tldr">TLDR</option>
+                                <option value="tldr">Quick Summary</option>
                                 <option value="key-points">Key Points</option>
-                                <option value="teaser">Teaser</option>
-                                <option value="headline">Headline</option>
+                                <option value="teaser">Intriguing Teaser</option>
+                                <option value="headline">Article Headline</option>
                             </select>
                         </div>
                         <div class="option-group">
@@ -76,7 +90,12 @@
 
                     <button class="btn btn-primary" id="summarize-btn">
                         <span class="btn-content">
-                            <span class="btn-icon">📝</span>
+                            <span class="btn-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="9 11 12 14 22 4"></polyline>
+                                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                                </svg>
+                            </span>
                             <span class="btn-text">Summarize Text</span>
                         </span>
                         <span class="btn-spinner" style="display: none;">
@@ -124,10 +143,6 @@
 
             <!-- Translate Tab -->
             <div class="tab-content" id="translate-tab">
-                <div class="feature-header">
-                    <h2>Text Translator</h2>
-                    <p>Real-time translation as you type</p>
-                </div>
 
                 <div class="input-section">
                     <div class="translate-box">
@@ -207,16 +222,16 @@
 
             <!-- AI Chat Tab -->
             <div class="tab-content" id="chat-tab">
-                <div class="feature-header">
-                    <h2>AI Chat Assistant</h2>
-                    <p>Ask questions about selected text or anything else</p>
-                </div>
 
                 <div class="chat-wrapper">
                     <div class="chat-container" id="chat-messages">
                         <div class="chat-welcome">
-                            <div class="welcome-icon">💬</div>
-                            <h3>Welcome to AI Chat!</h3>
+                            <div class="welcome-icon">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                </svg>
+                            </div>
+                            <h3>Hey Gemini Nano 😎!</h3>
                             <p>Select text on any webpage and right-click "Ask AI about this" or type your question below.</p>
                         </div>
                     </div>
@@ -230,7 +245,12 @@
                         ></textarea>
                         <button class="btn btn-primary" id="chat-send-btn">
                             <span class="btn-content">
-                                <span class="btn-icon">✨</span>
+                                <span class="btn-icon">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                    </svg>
+                                </span>
                                 <span class="btn-text">Send</span>
                             </span>
                             <span class="btn-spinner" style="display: none;">
@@ -252,6 +272,11 @@
             <div class="spinner"></div>
             <p id="loadingText">Processing...</p>
         </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Brief AI v1.0.1 - Daemon craft © <span id="footerYear"></span></p>
+        </footer>
     </div>
 
     <script src="sidepanel.js" type="module"></script>
