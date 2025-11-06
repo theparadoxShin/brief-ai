@@ -49,15 +49,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Open side panel if not already open
     await chrome.sidePanel.open({ windowId: tab.windowId });
 
-    // Send action to side panel
+    // Send action to side panel with a small delay to ensure sidepanel is loaded
     const action = {
         type: info.menuItemId,
         text: selectedText,
         timestamp: Date.now()
     };
 
-    // Save current action to storage - sidepanel will handle it
-    await chrome.storage.local.set({ currentAction: action });
+    // Small delay to ensure sidepanel is fully loaded before sending action
+    setTimeout(async () => {
+        console.log('Sending action to sidepanel:', action);
+        await chrome.storage.local.set({ currentAction: action });
+    }, 100);
 });
 
 // Listen for messages from content scripts or side panel
