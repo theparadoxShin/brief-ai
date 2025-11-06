@@ -29,6 +29,6 @@
         "default_path": "sidepanel/sidepanel.html"
     },
     "action":{
-        "default_title": "Open Brief AI"
+        "default_title": "Brief AI - Your AI Assistant"
     }
 }

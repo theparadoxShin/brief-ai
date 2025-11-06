@@ -247,6 +247,7 @@ class SidePanelUI {
     listenForContextActions() {
         // Listen for storage changes (when context menu is used)
         chrome.storage.onChanged.addListener((changes, namespace) => {
+            console.log('Storage changed:', changes, namespace);
             if (namespace === 'local' && changes.currentAction) {
                 const action = changes.currentAction.newValue;
                 this.handleContextAction(action);
@@ -257,12 +258,13 @@ class SidePanelUI {
     handleContextAction(action) {
         // Switch to appropriate tab
         const tabMap = {
-            'summarize': 'summarize',
-            'translate': 'translate',
-            'promptAI': 'chat'
+            'summarize': 'summarize-tab',
+            'translate': 'translate-tab',
+            'promptAI': 'chat-tab'
         };
 
         const targetTab = tabMap[action.type];
+        console.log('Handling context action:', action, 'Target tab:', targetTab);
         if (targetTab) {
             // Click the tab button to switch
             const tabBtn = document.querySelector(`[data-tab="${targetTab}"]`);
@@ -271,8 +273,9 @@ class SidePanelUI {
             }
 
             // Fill the input with the selected text
-            const inputId = `${targetTab === 'chat' ? 'chat' : action.type}-input`;
+            const inputId = `${targetTab === 'promptAI' ? 'chat' : action.type}-input`;
             const input = document.getElementById(inputId);
+            console.log('Filling input:', inputId, action.text);
             if (input) {
                 input.value = action.text;
 

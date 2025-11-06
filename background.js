@@ -39,6 +39,7 @@ chrome.runtime.onInstalled.addListener(() => {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     const selectedText = info.selectionText;
+    console.log('Context menu clicked:', info, tab);
     
     if (!selectedText) {
         console.error('No text selected');
