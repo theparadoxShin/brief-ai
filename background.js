@@ -107,6 +107,20 @@ async function handleMessage(request, sender, sendResponse) {
                 break;
             }
 
+            case 'VERTEX_AI_CONNECTED':
+                console.log('Vertex AI connected:', request.config);
+                // Reinitialize AI service to pick up new config
+                await aiService.initVertexAI();
+                sendResponse({ success: true });
+                break;
+
+            case 'VERTEX_AI_DISCONNECTED':
+                console.log('Vertex AI disconnected');
+                // Clear Vertex AI config
+                aiService.vertexAI = null;
+                sendResponse({ success: true });
+                break;
+
             default:
                 sendResponse({ success: false, error: 'Unknown action' });
         }

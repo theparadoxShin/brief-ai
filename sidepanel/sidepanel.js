@@ -9,20 +9,28 @@ class SidePanelUI {
             isPaused: false,
             currentUtterance: null
         };
+        this.aiMode = 'local'; // 'local' or 'online'
+        this.vertexConfig = null;
         this.init();
     }
 
-    init() {
+    async init() {
 
         // Set footer year
-        document.getElementById('footerYear').textContent = new Date().getFullYear();
+        const footerYear = document.getElementById('footerYear');
+        if (footerYear) {
+            footerYear.textContent = new Date().getFullYear();
+        }
+
+        // Initialize AI mode selector
+        await this.initAIMode();
 
         // Initialize tabs
         this.initTabs();
-        
+
         // Initialize buttons
         this.initButtons();
-        
+
         // Check AI availability
         this.checkAIStatus();
 
@@ -31,6 +39,102 @@ class SidePanelUI {
 
         // Ensure voices are loaded for TTS
         this.ensureVoicesLoaded();
+    }
+
+    // ===== AI MODE MANAGEMENT =====
+    async initAIMode() {
+        // Load saved mode and config
+        const result = await chrome.storage.local.get(['aiMode', 'vertexAI', 'selectedModel']);
+
+        this.aiMode = result.aiMode || 'local';
+        this.vertexConfig = result.vertexAI || null;
+
+        // Set active mode button
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === this.aiMode);
+        });
+
+        // Show/hide online options
+        const onlineOptions = document.getElementById('onlineOptions');
+        onlineOptions.style.display = this.aiMode === 'online' ? 'flex' : 'none';
+
+        // Set selected model
+        if (result.selectedModel) {
+            document.getElementById('vertexModelSelect').value = result.selectedModel;
+        }
+
+        // Update connect button state
+        this.updateConnectButtonState();
+
+        // Setup mode toggle listeners
+        document.getElementById('localModeBtn').addEventListener('click', () => {
+            this.switchMode('local');
+        });
+
+        document.getElementById('onlineModeBtn').addEventListener('click', () => {
+            this.switchMode('online');
+        });
+
+        // Setup connect button
+        document.getElementById('connectBtn').addEventListener('click', () => {
+            this.handleConnect();
+        });
+
+        // Setup model select change
+        document.getElementById('vertexModelSelect').addEventListener('change', async (e) => {
+            await chrome.storage.local.set({ selectedModel: e.target.value });
+        });
+
+        // Listen for config updates from auth page
+        chrome.storage.onChanged.addListener((changes, namespace) => {
+            if (namespace === 'local' && changes.vertexAI) {
+                this.vertexConfig = changes.vertexAI.newValue;
+                this.updateConnectButtonState();
+            }
+        });
+    }
+
+    async switchMode(mode) {
+        this.aiMode = mode;
+        await chrome.storage.local.set({ aiMode: mode });
+
+        // Update UI
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === mode);
+        });
+
+        const onlineOptions = document.getElementById('onlineOptions');
+        onlineOptions.style.display = mode === 'online' ? 'flex' : 'none';
+
+        // Update status
+        this.checkAIStatus();
+
+        console.log(`Switched to ${mode} mode`);
+    }
+
+    updateConnectButtonState() {
+        const connectBtn = document.getElementById('connectBtn');
+        const connectBtnText = document.getElementById('connectBtnText');
+
+        if (this.vertexConfig && this.vertexConfig.connected) {
+            connectBtn.classList.add('connected');
+            connectBtnText.textContent = 'Connected';
+        } else {
+            connectBtn.classList.remove('connected');
+            connectBtnText.textContent = 'Connect';
+        }
+    }
+
+    handleConnect() {
+        if (this.vertexConfig && this.vertexConfig.connected) {
+            // Already connected, show info or allow disconnect
+            if (confirm('You are already connected. Do you want to manage your connection?')) {
+                chrome.tabs.create({ url: chrome.runtime.getURL('auth/auth.html') });
+            }
+        } else {
+            // Open auth page
+            chrome.tabs.create({ url: chrome.runtime.getURL('auth/auth.html') });
+        }
     }
 
     // ===== TTS VOICE LOADING =====
@@ -171,12 +275,24 @@ class SidePanelUI {
     // ===== CHECK AI STATUS =====
     async checkAIStatus() {
         try {
+            // Check if in online mode
+            if (this.aiMode === 'online') {
+                // Check Vertex AI connection status
+                if (this.vertexConfig && this.vertexConfig.connected) {
+                    this.updateStatusIndicator({ mode: 'online', connected: true });
+                } else {
+                    this.updateStatusIndicator({ mode: 'online', connected: false });
+                }
+                return;
+            }
+
+            // Local mode - check Chrome AI APIs
             const response = await chrome.runtime.sendMessage({
                 action: 'CHECK_AI_AVAILABILITY'
             });
 
             if (response.success) {
-                this.updateStatusIndicator(response.data);
+                this.updateStatusIndicator({ mode: 'local', ...response.data });
 
                 // If some features are downloading or downloadable, check again in 5 seconds
                 const hasDownloading = Object.values(response.data).some(
@@ -209,6 +325,18 @@ class SidePanelUI {
             return;
         }
 
+        // Handle online mode status
+        if (status.mode === 'online') {
+            if (status.connected) {
+                indicator.className = 'status-indicator ready';
+                statusText.textContent = 'Online AI Connected';
+            } else {
+                indicator.className = 'status-indicator warning';
+                statusText.textContent = 'Online AI - Not Connected';
+            }
+            return;
+        }
+
         // Count status of each feature
         // Possible values: 'available', 'downloading', 'downloadable', 'unavailable'
         const features = Object.entries(status);
@@ -218,6 +346,7 @@ class SidePanelUI {
         const unavailableCount = features.filter(([_, s]) => s === 'unavailable').length;
 
         console.log('AI Status:', status);
+        console.log('Feature counts:', features);
         console.log(`Available: ${availableCount}, Downloading: ${downloadingCount}, Downloadable: ${downloadableCount}, Unavailable: ${unavailableCount}`);
 
         // All features available and ready

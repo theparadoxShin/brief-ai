@@ -9,6 +9,139 @@ export class AIService {
         this.capabilities = null;
         this.translatorPair = null; // { source: 'en', target: 'fr' }
         this.conversationHistory = []; // Track conversation for context
+        this.vertexAI = null; // Vertex AI service
+        this.aiMode = 'local'; // 'local' or 'online'
+    }
+
+    // ===== VERTEX AI SERVICE =====
+    async initVertexAI() {
+        const result = await chrome.storage.local.get(['vertexAI', 'selectedModel']);
+
+        if (result.vertexAI && result.vertexAI.connected) {
+            this.vertexAI = {
+                projectId: result.vertexAI.projectId,
+                location: result.vertexAI.location,
+                apiKey: result.vertexAI.apiKey,
+                model: result.selectedModel || 'gemini-1.5-pro'
+            };
+            return true;
+        }
+        return false;
+    }
+
+    async callVertexAI(prompt, options = {}) {
+        if (!this.vertexAI) {
+            const initialized = await this.initVertexAI();
+            if (!initialized) {
+                throw new Error('Vertex AI not configured. Please connect in settings.');
+            }
+        }
+
+        const endpoint = `https://${this.vertexAI.location}-aiplatform.googleapis.com/v1/projects/${this.vertexAI.projectId}/locations/${this.vertexAI.location}/publishers/google/models/${this.vertexAI.model}:generateContent`;
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.vertexAI.apiKey}`
+            },
+            body: JSON.stringify({
+                contents: [{
+                    role: 'user',
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    maxOutputTokens: options.maxTokens || 2048,
+                    temperature: options.temperature || 0.7,
+                    topP: options.topP || 0.95,
+                    topK: options.topK || 40
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Vertex AI request failed');
+        }
+
+        const data = await response.json();
+        return data.candidates[0].content.parts[0].text;
+    }
+
+    async callVertexAIStream(prompt, onChunk, options = {}) {
+        if (!this.vertexAI) {
+            const initialized = await this.initVertexAI();
+            if (!initialized) {
+                throw new Error('Vertex AI not configured. Please connect in settings.');
+            }
+        }
+
+        const endpoint = `https://${this.vertexAI.location}-aiplatform.googleapis.com/v1/projects/${this.vertexAI.projectId}/locations/${this.vertexAI.location}/publishers/google/models/${this.vertexAI.model}:streamGenerateContent`;
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.vertexAI.apiKey}`
+            },
+            body: JSON.stringify({
+                contents: [{
+                    role: 'user',
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    maxOutputTokens: options.maxTokens || 2048,
+                    temperature: options.temperature || 0.7,
+                    topP: options.topP || 0.95,
+                    topK: options.topK || 40
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Vertex AI stream request failed');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n').filter(line => line.trim());
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        if (data.candidates && data.candidates[0].content) {
+                            const text = data.candidates[0].content.parts[0].text;
+                            fullResponse += text;
+                            if (onChunk) onChunk(fullResponse);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing stream chunk:', e);
+                    }
+                }
+            }
+        }
+
+        return fullResponse;
+    }
+
+    async setAIMode(mode) {
+        this.aiMode = mode;
+        await chrome.storage.local.set({ aiMode: mode });
+    }
+
+    async getAIMode() {
+        const result = await chrome.storage.local.get(['aiMode']);
+        this.aiMode = result.aiMode || 'local';
+        return this.aiMode;
     }
 
     // ===== SUMMARIZER API =====
@@ -414,6 +547,37 @@ export class AIService {
     // ===== STREAMING PROMPT (for long responses) =====
     async promptStream(text, onChunk, options = {}) {
         try {
+            // Get current AI mode
+            await this.getAIMode();
+
+            // Use Vertex AI if in online mode
+            if (this.aiMode === 'online') {
+                console.log('Using Vertex AI for streaming...');
+                const systemPrompt = 'You are a helpful and friendly AI assistant. IMPORTANT: Always respond in the SAME language as the user\'s message. If the user writes in French, respond in French. If in English, respond in English. Remember the conversation context and provide relevant responses based on previous messages.';
+
+                // Build conversation context
+                let contextPrompt = systemPrompt + '\n\nConversation history:\n';
+                for (const msg of this.conversationHistory) {
+                    contextPrompt += `${msg.role}: ${msg.content}\n`;
+                }
+                contextPrompt += `user: ${text}\nassistant:`;
+
+                const fullResponse = await this.callVertexAIStream(contextPrompt, onChunk, options);
+
+                // Store conversation in history
+                this.conversationHistory.push({
+                    role: 'user',
+                    content: text
+                });
+                this.conversationHistory.push({
+                    role: 'assistant',
+                    content: fullResponse
+                });
+
+                return { prompt: text, response: fullResponse, timestamp: Date.now() };
+            }
+
+            // Use local Gemini Nano (existing code)
             const available = (typeof LanguageModel !== 'undefined')
                 ? await LanguageModel.availability()
                 : 'unavailable';

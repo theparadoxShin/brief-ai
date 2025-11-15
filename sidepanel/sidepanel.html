@@ -14,6 +14,47 @@
                 <h1>Brief AI</h1>
                 <p class="tagline">AI-Powered Tools</p>
             </div>
+
+            <!-- AI Mode Selector -->
+            <div class="ai-mode-selector">
+                <div class="mode-toggle">
+                    <button class="mode-btn active" data-mode="local" id="localModeBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                        <span>Local AI</span>
+                    </button>
+                    <button class="mode-btn" data-mode="online" id="onlineModeBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="2" y1="12" x2="22" y2="12"></line>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                        <span>Online AI</span>
+                    </button>
+                </div>
+
+                <!-- Online Mode Options (hidden by default) -->
+                <div class="online-options" id="onlineOptions" style="display: none;">
+                    <div class="model-selector">
+                        <select id="vertexModelSelect">
+                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                            <option value="gemini-pro">Gemini Pro</option>
+                        </select>
+                    </div>
+                    <button class="connect-btn" id="connectBtn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                        </svg>
+                        <span id="connectBtnText">Connect</span>
+                    </button>
+                </div>
+            </div>
+
             <div class="status-indicator" id="statusIndicator">
                 <span class="status-dot"></span>
                 <span class="status-text">Checking...</span>
