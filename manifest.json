@@ -2,13 +2,19 @@
     "manifest_version": 3,
     "name": "Brief AI",
     "description": "Translate the text selected and can read it on a webpage into a concise summary using AI.",
-    "version": "1.0",
+    "version": "1.0.1",
     "permissions": [
         "contextMenus",
         "activeTab",
         "scripting",
         "storage",
-        "sidePanel"
+        "sidePanel",
+        "tabs",
+        "tabCapture"
+    ],
+    "host_permissions": [
+        "https://*.googleapis.com/*",
+        "https://*.aiplatform.googleapis.com/*"
     ],
     "background": {
         "service_worker": "background.js",
@@ -26,9 +32,15 @@
         "128": "icons/logo128.png"
     },
     "side_panel": {
-        "default_path": "sidepanel/sidepanel.html"
+        "default_path": "sidepanel/sidepanel-new.html"
     },
     "action":{
         "default_title": "Brief AI - Your AI Assistant"
-    }
+    },
+    "web_accessible_resources": [
+        {
+            "resources": ["auth/auth.html", "auth/auth.css", "auth/auth.js"],
+            "matches": ["<all_urls>"]
+        }
+    ]
 }

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brief AI - Google Vertex AI Authentication</title>
+    <link rel="stylesheet" href="auth.css">
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <!-- Header -->
+            <div class="auth-header">
+                <div class="logo-section">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <h1>Brief AI</h1>
+                </div>
+                <p class="subtitle">Connect to Google Vertex AI</p>
+            </div>
+
+            <!-- Status Message -->
+            <div class="status-message" id="statusMessage" style="display: none;">
+                <svg class="status-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 11 12 14 22 4"></polyline>
+                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                </svg>
+                <p id="statusText"></p>
+            </div>
+
+            <!-- Auth Form -->
+            <form class="auth-form" id="authForm">
+                <div class="form-section">
+                    <h3>Step 1: Google Cloud Configuration</h3>
+                    <p class="section-description">Enter your Google Cloud project details</p>
+
+                    <div class="form-group">
+                        <label for="projectId">Project ID</label>
+                        <input
+                            type="text"
+                            id="projectId"
+                            placeholder="your-project-id"
+                            required
+                        >
+                        <span class="helper-text">Find this in your Google Cloud Console</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="location">Location</label>
+                        <select id="location" required>
+                            <option value="">Select a region</option>
+                            <option value="us-central1">us-central1 (Iowa)</option>
+                            <option value="us-east4">us-east4 (Virginia)</option>
+                            <option value="us-west1">us-west1 (Oregon)</option>
+                            <option value="europe-west1">europe-west1 (Belgium)</option>
+                            <option value="europe-west4">europe-west4 (Netherlands)</option>
+                            <option value="asia-northeast1">asia-northeast1 (Tokyo)</option>
+                            <option value="asia-southeast1">asia-southeast1 (Singapore)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>Step 2: API Key</h3>
+                    <p class="section-description">Your API key will be stored securely in Chrome's local storage</p>
+
+                    <div class="form-group">
+                        <label for="apiKey">API Key</label>
+                        <div class="password-input">
+                            <input
+                                type="password"
+                                id="apiKey"
+                                placeholder="Enter your Vertex AI API key"
+                                required
+                            >
+                            <button type="button" class="toggle-visibility" id="toggleApiKey">
+                                <svg class="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                            </button>
+                        </div>
+                        <span class="helper-text">
+                            <a href="https://console.cloud.google.com/apis/credentials" target="_blank">Get your API key</a>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="form-section info-section">
+                    <div class="info-card">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                        <div>
+                            <h4>How to get your API key:</h4>
+                            <ol>
+                                <li>Go to <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a></li>
+                                <li>Enable the Vertex AI API for your project</li>
+                                <li>Create credentials (API key) in the Credentials section</li>
+                                <li>Copy and paste the key above</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="testConnection">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                        </svg>
+                        Test Connection
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="saveBtn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 11 12 14 22 4"></polyline>
+                            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                        </svg>
+                        Save Configuration
+                    </button>
+                </div>
+            </form>
+
+            <!-- Current Configuration -->
+            <div class="current-config" id="currentConfig" style="display: none;">
+                <h3>Current Configuration</h3>
+                <div class="config-details">
+                    <div class="config-item">
+                        <span class="config-label">Status:</span>
+                        <span class="config-value connected">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                            Connected
+                        </span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Project ID:</span>
+                        <span class="config-value" id="currentProjectId"></span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Location:</span>
+                        <span class="config-value" id="currentLocation"></span>
+                    </div>
+                    <button class="btn btn-danger" id="disconnectBtn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        Disconnect
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="auth-footer">
+            <p>Brief AI v1.0.1 - Free Extension © 2024</p>
+            <p class="privacy-note">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                Your API key is stored locally and never shared
+            </p>
+        </footer>
+    </div>
+
+    <script src="auth.js"></script>
+</body>
+</html>

@@ -3,6 +3,96 @@ import { AIService } from './services/ai-services.js';
 
 const aiService = new AIService();
 
+// State for tab audio capture
+let audioCapture = {
+    stream: null,
+    audioCtx: null,
+    source: null,
+    analyser: null,
+    meterInterval: null,
+};
+
+async function getActiveTabId() {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs && tabs[0] ? tabs[0].id : null;
+}
+
+async function startTabAudioCapture() {
+    if (audioCapture.stream) {
+        // Already capturing
+        chrome.runtime.sendMessage({ type: 'LIVE_AUDIO_STATUS', message: 'Tab audio capture already active' }).catch(()=>{});
+        return { ok: true };
+    }
+
+    const tabId = await getActiveTabId();
+    if (!tabId) throw new Error('No active tab found');
+
+    const stream = await new Promise((resolve, reject) => {
+        try {
+            chrome.tabCapture.capture({
+                audio: true,
+                video: false,
+                targetTabId: tabId
+            }, (capturedStream) => {
+                const err = chrome.runtime.lastError;
+                if (err) return reject(new Error(err.message || 'tabCapture failed'));
+                if (!capturedStream) return reject(new Error('No stream captured'));
+                resolve(capturedStream);
+            });
+        } catch (e) {
+            reject(e);
+        }
+    });
+
+    const audioCtx = new (self.AudioContext || self.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    // Also route to destination so user still hears audio
+    source.connect(audioCtx.destination);
+
+    const dataArray = new Uint8Array(analyser.fftSize);
+    const updateMeter = () => {
+        analyser.getByteTimeDomainData(dataArray);
+        // Compute RMS
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+            const v = (dataArray[i] - 128) / 128; // [-1,1]
+            sum += v * v;
+        }
+        const rms = Math.sqrt(sum / dataArray.length); // 0..1
+        const level = Math.min(1, Math.max(0, rms * 1.8));
+        chrome.runtime.sendMessage({ type: 'LIVE_AUDIO_LEVELS', level }).catch(()=>{});
+    };
+    const meterInterval = setInterval(updateMeter, 120);
+
+    audioCapture = { stream, audioCtx, source, analyser, meterInterval };
+    chrome.runtime.sendMessage({ type: 'LIVE_AUDIO_STATUS', message: 'Tab audio capture started' }).catch(()=>{});
+    return { ok: true };
+}
+
+async function stopTabAudioCapture() {
+    if (audioCapture.meterInterval) {
+        clearInterval(audioCapture.meterInterval);
+    }
+    if (audioCapture.source) {
+        try { audioCapture.source.disconnect(); } catch {}
+    }
+    if (audioCapture.analyser) {
+        try { audioCapture.analyser.disconnect(); } catch {}
+    }
+    if (audioCapture.audioCtx) {
+        try { await audioCapture.audioCtx.close(); } catch {}
+    }
+    if (audioCapture.stream) {
+        try { audioCapture.stream.getTracks().forEach(t => t.stop()); } catch {}
+    }
+    audioCapture = { stream: null, audioCtx: null, source: null, analyser: null, meterInterval: null };
+    chrome.runtime.sendMessage({ type: 'LIVE_AUDIO_STATUS', message: 'Tab audio capture stopped' }).catch(()=>{});
+    return { ok: true };
+}
+
 // Context Menu Definitions
 const MENU_ITEMS = [
     {
@@ -19,6 +109,11 @@ const MENU_ITEMS = [
         id: "promptAI",
         title: "Ask AI about this",
         contexts: ["selection"]
+    },
+    {
+        id: "describeImage",
+        title: "🖼️ Describe this Image (AI)",
+        contexts: ["image"]
     }
 ];
 
@@ -38,8 +133,29 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    const selectedText = info.selectionText;
     console.log('Context menu clicked:', info, tab);
+    
+    // Handle image description
+    if (info.menuItemId === 'describeImage' && info.srcUrl) {
+        console.log('Describing image:', info.srcUrl);
+        
+        // Open side panel
+        await chrome.sidePanel.open({ windowId: tab.windowId });
+        
+        // Send image action to sidepanel
+        setTimeout(async () => {
+            await chrome.storage.local.set({
+                currentAction: {
+                    type: 'describeImage',
+                    imageUrl: info.srcUrl,
+                    timestamp: Date.now()
+                }
+            });
+        }, 100);
+        return;
+    }
+    
+    const selectedText = info.selectionText;
     
     if (!selectedText) {
         console.error('No text selected');
@@ -78,6 +194,18 @@ async function handleMessage(request, sender, sendResponse) {
                 sendResponse({ success: true, data: availability }); // Respond with availability data
                 break;
 
+            case 'SET_CLOUD_MODEL': {
+                try {
+                    aiService.selectedModel = request.model || 'gemini-1.5-flash';
+                    await chrome.storage.local.set({ selectedModel: aiService.selectedModel });
+                    console.log('[Background] Cloud model set to:', aiService.selectedModel);
+                    sendResponse({ success: true });
+                } catch (e) {
+                    sendResponse({ success: false, error: e.message });
+                }
+                break;
+            }
+
             case 'SUMMARIZE': 
                 const summaryResult = await aiService.summarize(request.text, request.options);
                 sendResponse({ success: true, data: summaryResult });
@@ -106,6 +234,64 @@ async function handleMessage(request, sender, sendResponse) {
                 sendResponse({ success: true, data: promptResult });
                 break;
             }
+
+            case 'SET_AI_MODE': {
+                try {
+                    await aiService.setAIMode(request.mode === 'online' ? 'online' : 'local');
+                    sendResponse({ success: true });
+                } catch (e) {
+                    sendResponse({ success: false, error: e.message });
+                }
+                break;
+            }
+
+            case 'START_AUDIO_CAPTURE': {
+                try {
+                    const res = await startTabAudioCapture();
+                    sendResponse({ success: true, data: res });
+                } catch (e) {
+                    console.error('START_AUDIO_CAPTURE error:', e);
+                    sendResponse({ success: false, error: e.message });
+                }
+                break;
+            }
+
+            case 'STOP_AUDIO_CAPTURE': {
+                try {
+                    const res = await stopTabAudioCapture();
+                    sendResponse({ success: true, data: res });
+                } catch (e) {
+                    console.error('STOP_AUDIO_CAPTURE error:', e);
+                    sendResponse({ success: false, error: e.message });
+                }
+                break;
+            }
+
+            case 'DESCRIBE_IMAGE': {
+                try {
+                    console.log('[Background] Describing image:', request.imageUrl);
+                    const description = await aiService.describeImage(request.imageUrl, request.prompt);
+                    sendResponse({ success: true, data: description });
+                } catch (e) {
+                    console.error('DESCRIBE_IMAGE error:', e);
+                    sendResponse({ success: false, error: e.message });
+                }
+                break;
+            }
+
+            case 'VERTEX_AI_CONNECTED':
+                console.log('Vertex AI connected:', request.config);
+                // Reinitialize AI service to pick up new config
+                await aiService.initVertexAI();
+                sendResponse({ success: true });
+                break;
+
+            case 'VERTEX_AI_DISCONNECTED':
+                console.log('Vertex AI disconnected');
+                // Clear Vertex AI config
+                aiService.vertexAI = null;
+                sendResponse({ success: true });
+                break;
 
             default:
                 sendResponse({ success: false, error: 'Unknown action' });
