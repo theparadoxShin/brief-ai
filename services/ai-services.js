@@ -3,14 +3,18 @@
 export class AIService {
     constructor() {
         this.summarizer = null;
+        this.summarizerConfig = null; // Track summarizer config to detect changes
         this.translator = null;
         this.languageDetector = null;
         this.aiSession = null;
+        this.multimodalSession = null; // Session for image/audio processing
         this.capabilities = null;
         this.translatorPair = null; // { source: 'en', target: 'fr' }
         this.conversationHistory = []; // Track conversation for context
-        this.vertexAI = null; // Vertex AI service
+        this.vertexAI = null; // Vertex AI service (legacy)
+        this.firebaseAI = null; // Firebase AI Logic (hybrid mode)
         this.aiMode = 'local'; // 'local' or 'online'
+        this.selectedModel = 'gemini-nano'; // Default model
     }
 
     // ===== VERTEX AI SERVICE =====
@@ -147,45 +151,76 @@ export class AIService {
     // ===== SUMMARIZER API =====
     async summarize(text, options = {}) {
         try {
-            // Verify availability
-            const canSummarize = await Summarizer.availability();
+            console.log('[AI Service] Summarize called with options:', options);
             
-            if (canSummarize === 'unavailable') {
-                throw new Error('Summarizer API is not available');
+            // Validate input
+            if (!text || typeof text !== 'string' || text.trim().length === 0) {
+                throw new Error('Text to summarize cannot be empty');
             }
 
-            // Create the summarizer if not already done
-            if (!this.summarizer) {
-                // Respect user-activation requirement per Built-in AI docs
-                const requireActivation = options.requireActivation !== false; // default true
-                const hasActivation = (typeof navigator !== 'undefined' && navigator.userActivation)
-                    ? navigator.userActivation.isActive
-                    : true; // In some extension contexts, this may be undefined; optimistically allow.
+            // Verify availability
+            if (typeof Summarizer === 'undefined') {
+                throw new Error('Summarizer API is not available in this browser. Please use Chrome 121+ with Gemini Nano enabled.');
+            }
 
-                if (requireActivation && !hasActivation) {
-                    const err = new Error('User activation required to initialize Summarizer. Trigger from a click/tap/keypress.');
-                    err.code = 'activation-required';
-                    throw err;
+            const canSummarize = await Summarizer.availability();
+            console.log('[AI Service] Summarizer availability:', canSummarize);
+            
+            if (canSummarize === 'unavailable') {
+                throw new Error('Summarizer API is not available. Enable chrome://flags/#summarization-api-for-gemini-nano');
+            }
+
+            // Prepare options
+            const summaryType = options.type || 'tldr';
+            const summaryLength = options.length || 'medium';
+            const summaryFormat = options.format || 'plain-text';
+
+            // Build config key to track if options changed
+            const configKey = `${summaryType}-${summaryLength}-${summaryFormat}`;
+
+            // Recreate summarizer if options changed or not initialized
+            if (!this.summarizer || this.summarizerConfig !== configKey) {
+                console.log('[AI Service] Creating new Summarizer with config:', configKey);
+                
+                // Destroy previous summarizer if exists
+                if (this.summarizer) {
+                    try {
+                        this.summarizer.destroy?.();
+                    } catch (e) {
+                        console.warn('[AI Service] Failed to destroy old summarizer:', e);
+                    }
+                    this.summarizer = null;
                 }
 
+                // Create new summarizer
                 this.summarizer = await Summarizer.create({
-                    type: options.type || 'tldr', // 'tldr', 'key-points', 'teaser', 'headline'
-                    format: options.format || 'plain-text', // 'plain-text' or 'markdown'
-                    length: options.length || 'medium', // 'short', 'medium', 'long'
+                    type: summaryType,
+                    format: summaryFormat,
+                    length: summaryLength,
                     monitor(m) {
-                        console.log('Downloading summarizer model...');
+                        console.log('[AI Service] Summarizer model download started...');
                         m.addEventListener('downloadprogress', (e) => {
                             const pct = e.total
                                 ? Math.round((e.loaded / e.total) * 100)
                                 : Math.round(e.loaded * 100);
-                            console.log(`Download progress: ${pct}%`);
+                            console.log(`[AI Service] Download progress: ${pct}%`);
                         });
                     }
                 });
+
+                this.summarizerConfig = configKey;
+                console.log('[AI Service] Summarizer created successfully');
             }
+
             // Generate the summary
+            console.log('[AI Service] Generating summary for text length:', text.length);
             const summary = await this.summarizer.summarize(text);
+            console.log('[AI Service] Summary generated, length:', summary?.length);
             
+            if (!summary) {
+                throw new Error('Summarizer returned empty result');
+            }
+
             return {
                 summary,
                 originalLength: text.length,
@@ -194,7 +229,10 @@ export class AIService {
             };
 
         } catch (error) {
-            console.error('Summarization error:', error);
+            console.error('[AI Service] Summarization error:', error);
+            // Reset summarizer on error to allow retry
+            this.summarizer = null;
+            this.summarizerConfig = null;
             throw new Error(`Summarization failed: ${error.message}`);
         }
     }
@@ -647,11 +685,341 @@ export class AIService {
         }
     }
 
+    // ===== MULTIMODAL: IMAGE DESCRIPTION =====
+    async describeImage(imageUrl, customPrompt = null) {
+        try {
+            console.log('[AI Service] Describing image:', imageUrl);
+
+            // First, try to use local Gemini Nano multimodal
+            if (this.aiMode === 'local') {
+                return await this.describeImageLocal(imageUrl, customPrompt);
+            } else {
+                // Use cloud/Firebase AI Logic for image description
+                return await this.describeImageCloud(imageUrl, customPrompt);
+            }
+        } catch (error) {
+            console.error('[AI Service] Image description error:', error);
+            throw new Error(`Image description failed: ${error.message}`);
+        }
+    }
+
+    async describeImageLocal(imageUrl, customPrompt = null) {
+        try {
+            // Check availability with image input
+            const availability = await LanguageModel.availability({
+                expectedInputs: [{ type: 'image' }, { type: 'text' }]
+            });
+
+            if (availability === 'unavailable') {
+                throw new Error('Multimodal AI (image) is not available locally. Try enabling chrome://flags/#prompt-api-for-gemini-nano-multimodal-input');
+            }
+
+            // Create multimodal session if needed
+            if (!this.multimodalSession) {
+                this.multimodalSession = await LanguageModel.create({
+                    expectedInputs: [
+                        { type: 'text', languages: ['en', 'fr', 'es', 'ja'] },
+                        { type: 'image' }
+                    ],
+                    expectedOutputs: [
+                        { type: 'text', languages: ['en', 'fr', 'es'] }
+                    ],
+                    initialPrompts: [
+                        {
+                            role: 'system',
+                            content: 'You are a helpful AI assistant that can describe images in detail. Respond in the same language as the user prompt. Be descriptive and accurate.'
+                        }
+                    ],
+                    monitor(m) {
+                        m.addEventListener('downloadprogress', (e) => {
+                            const pct = e.total ? Math.round((e.loaded / e.total) * 100) : Math.round(e.loaded * 100);
+                            console.log(`[AI Service] Multimodal model download: ${pct}%`);
+                        });
+                    }
+                });
+            }
+
+            // Fetch the image and convert to blob
+            const response = await fetch(imageUrl);
+            const imageBlob = await response.blob();
+
+            const prompt = customPrompt || 'Describe this image in detail. What do you see? Include colors, objects, people, text, and any other relevant details.';
+
+            // Use multimodal prompt with image
+            const result = await this.multimodalSession.prompt([
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'text', value: prompt },
+                        { type: 'image', value: imageBlob }
+                    ]
+                }
+            ]);
+
+            return {
+                description: result,
+                imageUrl: imageUrl,
+                model: 'gemini-nano-multimodal',
+                timestamp: Date.now()
+            };
+        } catch (error) {
+            console.error('[AI Service] Local image description error:', error);
+            // Fallback to cloud if local fails
+            if (this.vertexAI || this.firebaseAI) {
+                console.log('[AI Service] Falling back to cloud for image description');
+                return await this.describeImageCloud(imageUrl, customPrompt);
+            }
+            throw error;
+        }
+    }
+
+    async describeImageCloud(imageUrl, customPrompt = null) {
+        try {
+            // Initialize Vertex AI if needed
+            if (!this.vertexAI) {
+                const initialized = await this.initVertexAI();
+                if (!initialized) {
+                    throw new Error('Cloud AI not configured. Please sign in and configure Cloud AI in settings.');
+                }
+            }
+
+            // Fetch image and convert to base64
+            const response = await fetch(imageUrl);
+            const imageBlob = await response.blob();
+            const base64Image = await this.blobToBase64(imageBlob);
+
+            const prompt = customPrompt || 'Describe this image in detail. What do you see? Include colors, objects, people, text, and any other relevant details.';
+
+            // Call Vertex AI with image
+            const endpoint = `https://${this.vertexAI.location}-aiplatform.googleapis.com/v1/projects/${this.vertexAI.projectId}/locations/${this.vertexAI.location}/publishers/google/models/${this.vertexAI.model}:generateContent`;
+
+            const apiResponse = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.vertexAI.apiKey}`
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        role: 'user',
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    mimeType: imageBlob.type || 'image/jpeg',
+                                    data: base64Image
+                                }
+                            }
+                        ]
+                    }],
+                    generationConfig: {
+                        maxOutputTokens: 2048,
+                        temperature: 0.4
+                    }
+                })
+            });
+
+            if (!apiResponse.ok) {
+                const errorData = await apiResponse.json();
+                throw new Error(errorData.error?.message || 'Cloud image description failed');
+            }
+
+            const data = await apiResponse.json();
+            const description = data.candidates[0].content.parts[0].text;
+
+            return {
+                description: description,
+                imageUrl: imageUrl,
+                model: this.vertexAI.model,
+                timestamp: Date.now()
+            };
+        } catch (error) {
+            console.error('[AI Service] Cloud image description error:', error);
+            throw error;
+        }
+    }
+
+    // Helper: Convert Blob to Base64
+    async blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    // ===== MULTIMODAL PROMPT (text + image) =====
+    async promptWithImage(text, imageBlob, onChunk = null) {
+        try {
+            console.log('[AI Service] Multimodal prompt with image');
+
+            // Check multimodal availability
+            const availability = await LanguageModel.availability({
+                expectedInputs: [{ type: 'image' }, { type: 'text' }]
+            });
+
+            if (availability === 'unavailable') {
+                // Fallback to cloud
+                if (this.aiMode === 'online' || this.vertexAI) {
+                    return await this.promptWithImageCloud(text, imageBlob, onChunk);
+                }
+                throw new Error('Multimodal AI not available. Enable chrome://flags/#prompt-api-for-gemini-nano-multimodal-input');
+            }
+
+            // Create or reuse multimodal session
+            if (!this.multimodalSession) {
+                this.multimodalSession = await LanguageModel.create({
+                    expectedInputs: [
+                        { type: 'text', languages: ['en', 'fr', 'es', 'ja'] },
+                        { type: 'image' }
+                    ],
+                    expectedOutputs: [
+                        { type: 'text', languages: ['en', 'fr', 'es'] }
+                    ],
+                    monitor(m) {
+                        m.addEventListener('downloadprogress', (e) => {
+                            const pct = e.total ? Math.round((e.loaded / e.total) * 100) : Math.round(e.loaded * 100);
+                            console.log(`[AI Service] Multimodal model download: ${pct}%`);
+                        });
+                    }
+                });
+            }
+
+            // Stream response if callback provided
+            if (onChunk) {
+                const stream = await this.multimodalSession.promptStreaming([
+                    {
+                        role: 'user',
+                        content: [
+                            { type: 'text', value: text },
+                            { type: 'image', value: imageBlob }
+                        ]
+                    }
+                ]);
+
+                let fullResponse = '';
+                for await (const chunk of stream) {
+                    fullResponse += chunk;
+                    onChunk(fullResponse);
+                }
+
+                return { prompt: text, response: fullResponse, timestamp: Date.now() };
+            }
+
+            // Non-streaming
+            const result = await this.multimodalSession.prompt([
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'text', value: text },
+                        { type: 'image', value: imageBlob }
+                    ]
+                }
+            ]);
+
+            return { prompt: text, response: result, timestamp: Date.now() };
+        } catch (error) {
+            console.error('[AI Service] Multimodal prompt error:', error);
+            throw new Error(`Multimodal prompt failed: ${error.message}`);
+        }
+    }
+
+    async promptWithImageCloud(text, imageBlob, onChunk = null) {
+        // Use Vertex AI for cloud multimodal
+        if (!this.vertexAI) {
+            await this.initVertexAI();
+        }
+        
+        if (!this.vertexAI) {
+            throw new Error('Cloud AI not configured');
+        }
+
+        const base64Image = await this.blobToBase64(imageBlob);
+        const prompt = text;
+
+        const endpoint = `https://${this.vertexAI.location}-aiplatform.googleapis.com/v1/projects/${this.vertexAI.projectId}/locations/${this.vertexAI.location}/publishers/google/models/${this.vertexAI.model}:${onChunk ? 'streamGenerateContent' : 'generateContent'}`;
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.vertexAI.apiKey}`
+            },
+            body: JSON.stringify({
+                contents: [{
+                    role: 'user',
+                    parts: [
+                        { text: prompt },
+                        {
+                            inlineData: {
+                                mimeType: imageBlob.type || 'image/jpeg',
+                                data: base64Image
+                            }
+                        }
+                    ]
+                }],
+                generationConfig: {
+                    maxOutputTokens: 2048,
+                    temperature: 0.7
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'Cloud multimodal request failed');
+        }
+
+        if (onChunk) {
+            // Stream response
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullResponse = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n').filter(line => line.trim());
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                                fullResponse += data.candidates[0].content.parts[0].text;
+                                onChunk(fullResponse);
+                            }
+                        } catch (e) { /* ignore parse errors */ }
+                    }
+                }
+            }
+
+            return { prompt: text, response: fullResponse, timestamp: Date.now() };
+        }
+
+        const data = await response.json();
+        return {
+            prompt: text,
+            response: data.candidates[0].content.parts[0].text,
+            timestamp: Date.now()
+        };
+    }
+
     // Reset chat session (useful for "New Chat" feature)
     resetChatSession() {
         if (this.aiSession) {
             this.aiSession.destroy();
             this.aiSession = null;
+        }
+        if (this.multimodalSession) {
+            this.multimodalSession.destroy();
+            this.multimodalSession = null;
         }
         this.conversationHistory = [];
         console.log('Chat session reset');
