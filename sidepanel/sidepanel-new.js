@@ -90,6 +90,7 @@
         initAIModeToggle();
         initSummarize();
         initTranslate();
+        initProofread();
         initChat();
         initLiveTranslation();
         initWorkerFeatures();
@@ -547,6 +548,156 @@
         }
     }
 
+    // ===== PROOFREAD =====
+    function initProofread() {
+        const btn = $('#proofread-btn');
+        const input = $('#proofread-input');
+        const copyBtn = $('#copy-corrected');
+
+        btn?.addEventListener('click', handleProofread);
+
+        copyBtn?.addEventListener('click', async () => {
+            const output = $('#proofread-output');
+            // Get the corrected text (stored in data attribute)
+            const correctedText = output?.dataset?.correctedText || '';
+            if (!correctedText) {
+                showToast('No corrected text to copy', 'info');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(correctedText);
+                showToast('Corrected text copied!');
+            } catch (e) {
+                showError('Failed to copy');
+            }
+        });
+    }
+
+    async function handleProofread() {
+        const btn = $('#proofread-btn');
+        const input = $('#proofread-input');
+        const text = input?.value?.trim() || '';
+
+        if (!text) {
+            showToast('Please enter some text to proofread', 'info');
+            return;
+        }
+
+        const lang = $('#proofread-lang')?.value || 'en';
+
+        setButtonLoading(btn, true);
+
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'PROOFREAD',
+                text: text,
+                language: lang
+            });
+
+            if (response?.success && response?.data) {
+                displayProofreadResult(response.data);
+                if (response.data.hasErrors) {
+                    showToast(`Found ${response.data.corrections.length} issue(s)`, 'info');
+                } else {
+                    showToast('No errors found! ✓', 'success');
+                }
+            } else {
+                const errorMsg = response?.error || 'Proofreading failed. Make sure Proofreader API is enabled.';
+                showError(errorMsg);
+            }
+        } catch (error) {
+            console.error('[Brief AI] Proofread error:', error);
+            showError(`Proofreading failed: ${error.message}`);
+        } finally {
+            setButtonLoading(btn, false);
+        }
+    }
+
+    function displayProofreadResult(data) {
+        const section = $('#proofread-result');
+        const output = $('#proofread-output');
+        const stats = $('#proofread-stats');
+        const status = $('#proofread-status');
+
+        if (status) {
+            if (data.hasErrors) {
+                status.textContent = `${data.corrections.length} issue(s)`;
+                status.className = 'status-badge error';
+            } else {
+                status.textContent = '✓ Perfect';
+                status.className = 'status-badge success';
+            }
+        }
+
+        if (output) {
+            // Store corrected text for copy button
+            output.dataset.correctedText = data.correctedText || data.originalText;
+
+            if (data.hasErrors) {
+                // Display with corrections highlighted
+                output.innerHTML = formatCorrectionsHTML(data.originalText, data.corrections);
+            } else {
+                output.innerHTML = `
+                    <div class="no-errors">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: #10b981;">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        <span>No spelling or grammar errors found!</span>
+                    </div>
+                `;
+            }
+        }
+
+        if (stats) {
+            stats.innerHTML = `
+                <span>📝 Characters: ${data.originalText?.length || 0}</span>
+                <span>🔧 Corrections: ${data.corrections?.length || 0}</span>
+            `;
+        }
+
+        if (section) {
+            section.style.display = 'block';
+            section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    function formatCorrectionsHTML(originalText, corrections) {
+        if (!corrections || corrections.length === 0) {
+            return `<span class="no-errors">✓ No errors found</span>`;
+        }
+
+        let html = '';
+        let lastIndex = 0;
+
+        // Sort corrections by start index
+        const sortedCorrections = [...corrections].sort((a, b) => a.startIndex - b.startIndex);
+
+        for (const correction of sortedCorrections) {
+            // Add text before the error
+            if (correction.startIndex > lastIndex) {
+                html += `<span class="correct-text">${escapeHtml(originalText.substring(lastIndex, correction.startIndex))}</span>`;
+            }
+
+            // Add the error with strikethrough and correction
+            const errorText = originalText.substring(correction.startIndex, correction.endIndex);
+            const correctedText = correction.correction || '';
+
+            html += `<span class="error-highlight" title="Suggestion: ${escapeHtml(correctedText)}">`;
+            html += `<del class="error-del">${escapeHtml(errorText)}</del>`;
+            html += `<ins class="error-ins">${escapeHtml(correctedText)}</ins>`;
+            html += `</span>`;
+
+            lastIndex = correction.endIndex;
+        }
+
+        // Add remaining text
+        if (lastIndex < originalText.length) {
+            html += `<span class="correct-text">${escapeHtml(originalText.substring(lastIndex))}</span>`;
+        }
+
+        return html;
+    }
+
     // ===== AI CHAT =====
     function initChat() {
         const btn = $('#chat-send-btn');
@@ -914,12 +1065,14 @@
             const tabMap = {
                 summarize: 'summarize',
                 translate: 'translate',
+                proofread: 'proofread',
                 promptAI: 'chat'
             };
 
             const inputMap = {
                 summarize: 'summarize-input',
                 translate: 'translate-input',
+                proofread: 'proofread-input',
                 promptAI: 'chat-input'
             };
 
@@ -950,6 +1103,8 @@
                         $('#summarize-btn')?.click();
                     } else if (action.type === 'translate') {
                         handleRealtimeTranslate();
+                    } else if (action.type === 'proofread') {
+                        $('#proofread-btn')?.click();
                     } else if (action.type === 'promptAI') {
                         handleChatSend();
                     }

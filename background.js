@@ -1,7 +1,9 @@
 // Background Service Worker - Handles context menu, messages, and AI service interactions
 import { AIService } from './services/ai-services.js';
+import { ProofreaderService } from './services/proofreader-service.js';
 
 const aiService = new AIService();
+const proofreaderService = new ProofreaderService();
 
 // State for tab audio capture
 let audioCapture = {
@@ -97,17 +99,22 @@ async function stopTabAudioCapture() {
 const MENU_ITEMS = [
     {
         id: "summarize",
-        title: "Summarize Selection",
+        title: "📝 Summarize Selection",
         contexts: ["selection"]
     },
     {
         id: "translate",
-        title: "Translate Selection",
+        title: "🌍 Translate Selection",
+        contexts: ["selection"]
+    },
+    {
+        id: "proofread",
+        title: "✏️ Fix Spelling & Grammar",
         contexts: ["selection"]
     },
     {
         id: "promptAI",
-        title: "Ask AI about this",
+        title: "🤖 Ask AI about this",
         contexts: ["selection"]
     },
     {
@@ -292,6 +299,32 @@ async function handleMessage(request, sender, sendResponse) {
                 aiService.vertexAI = null;
                 sendResponse({ success: true });
                 break;
+
+            case 'PROOFREAD': {
+                try {
+                    console.log('[Background] Proofreading text');
+                    const result = await proofreaderService.proofread(
+                        request.text,
+                        request.language || 'en'
+                    );
+                    sendResponse({ success: true, data: result });
+                } catch (e) {
+                    console.error('PROOFREAD error:', e);
+                    sendResponse({ success: false, error: e.message });
+                }
+                break;
+            }
+
+            case 'CHECK_PROOFREADER_AVAILABILITY': {
+                try {
+                    const availability = await proofreaderService.checkAvailability();
+                    sendResponse({ success: true, data: availability });
+                } catch (e) {
+                    console.error('CHECK_PROOFREADER_AVAILABILITY error:', e);
+                    sendResponse({ success: false, error: e.message });
+                }
+                break;
+            }
 
             default:
                 sendResponse({ success: false, error: 'Unknown action' });
