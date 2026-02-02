@@ -74,6 +74,30 @@ body {
 
 .logo svg { opacity: 0.9; }
 
+/* Header Actions */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.coffee-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 50%;
+    color: white;
+    transition: var(--transition);
+}
+
+.coffee-btn:hover {
+    background: rgba(255,255,255,0.25);
+    transform: scale(1.1);
+}
+
 /* Status Indicator */
 .status-indicator {
     display: flex;
@@ -322,8 +346,8 @@ body {
 /* ===== SUB TABS ===== */
 .sub-tabs {
     display: flex;
-    gap: 4px;
-    padding: 8px 16px;
+    gap: 2px;
+    padding: 8px 12px;
     background: var(--bg);
     border-bottom: 1px solid var(--border-light);
 }
@@ -331,16 +355,20 @@ body {
 .sub-tab {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 8px;
     border: none;
     background: transparent;
     color: var(--text-secondary);
     border-radius: var(--radius);
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     transition: var(--transition);
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
 }
 
 .sub-tab:hover {
@@ -353,7 +381,11 @@ body {
     color: var(--primary);
 }
 
-.sub-tab svg { flex-shrink: 0; }
+.sub-tab svg { 
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+}
 
 /* ===== CONTENT ===== */
 .content {
@@ -741,6 +773,27 @@ body {
     padding: 10px 14px;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-light);
+    gap: 10px;
+}
+
+.btn-clear-history {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-clear-history:hover {
+    background: var(--bg-tertiary);
+    color: var(--danger);
+    border-color: var(--danger);
 }
 
 .live-indicator {
@@ -765,7 +818,7 @@ body {
 .stream-box {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     padding: 14px;
 }
 
@@ -790,9 +843,16 @@ body {
 
 .stream-text {
     font-size: 13px;
-    line-height: 1.5;
+    line-height: 1.6;
     color: var(--text);
     min-height: 40px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.stream-text.scrollable {
+    max-height: 120px;
+    overflow-y: auto;
 }
 
 .stream-text.updating {

@@ -126,16 +126,26 @@ const MENU_ITEMS = [
 
 // Create context menu on installation
 chrome.runtime.onInstalled.addListener(() => {
-
-    // Create context menu items
-        MENU_ITEMS.forEach(item => {
-        chrome.contextMenus.create({
-            id: item.id,
-            title: item.title,
-            contexts: item.contexts
-        });
-    });
+    createContextMenus();
 });
+
+// Also create menus on service worker startup (for reloads)
+createContextMenus();
+
+function createContextMenus() {
+    // Remove existing menus first to avoid duplicates
+    chrome.contextMenus.removeAll(() => {
+        // Create context menu items
+        MENU_ITEMS.forEach(item => {
+            chrome.contextMenus.create({
+                id: item.id,
+                title: item.title,
+                contexts: item.contexts
+            });
+        });
+        console.log('[Brief AI] Context menus created');
+    });
+}
 
 
 // Handle context menu clicks

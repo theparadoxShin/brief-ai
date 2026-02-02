@@ -707,7 +707,10 @@ export class AIService {
         try {
             // Check availability with image input
             const availability = await LanguageModel.availability({
-                expectedInputs: [{ type: 'image' }, { type: 'text' }]
+                expectedInputs: [
+                    { type: 'image' }, 
+                    { type: 'text' }
+                ]
             });
 
             if (availability === 'unavailable') {
@@ -718,16 +721,13 @@ export class AIService {
             if (!this.multimodalSession) {
                 this.multimodalSession = await LanguageModel.create({
                     expectedInputs: [
-                        { type: 'text', languages: ['en', 'fr', 'es', 'ja'] },
+                        { type: 'text' },
                         { type: 'image' }
-                    ],
-                    expectedOutputs: [
-                        { type: 'text', languages: ['en', 'fr', 'es'] }
                     ],
                     initialPrompts: [
                         {
                             role: 'system',
-                            content: 'You are a helpful AI assistant that can describe images in detail. Respond in the same language as the user prompt. Be descriptive and accurate.'
+                            content: 'You are a helpful AI assistant that can describe images in detail. Be descriptive and accurate.'
                         }
                     ],
                     monitor(m) {

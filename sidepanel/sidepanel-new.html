@@ -17,9 +17,20 @@
                     </svg>
                     <h1>Brief AI</h1>
                 </div>
-                <div class="status-indicator" id="statusIndicator">
-                    <span class="status-dot"></span>
-                    <span class="status-text">Ready</span>
+                <div class="header-actions">
+                    <a href="https://parfaittedomtedom.com" target="_blank" class="coffee-btn" title="Support me">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8h1a4 4 0 0 1 0 8h-1"></path>
+                            <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path>
+                            <line x1="6" y1="1" x2="6" y2="4"></line>
+                            <line x1="10" y1="1" x2="10" y2="4"></line>
+                            <line x1="14" y1="1" x2="14" y2="4"></line>
+                        </svg>
+                    </a>
+                    <div class="status-indicator" id="statusIndicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Ready</span>
+                    </div>
                 </div>
             </div>
 
@@ -448,16 +459,22 @@
                                 LIVE
                             </span>
                             <span id="detectedLang">Detecting...</span>
+                            <button class="btn-clear-history" id="clearLiveHistory" title="Clear history">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                            </button>
                         </div>
 
                         <div class="stream-box">
                             <div class="stream-section">
                                 <label>Original</label>
-                                <div class="stream-text" id="originalText">Waiting for content...</div>
+                                <div class="stream-text scrollable" id="originalText"></div>
                             </div>
                             <div class="stream-section translated">
                                 <label>Translation</label>
-                                <div class="stream-text" id="translatedText">Translation will appear here...</div>
+                                <div class="stream-text scrollable" id="translatedText"></div>
                             </div>
                         </div>
 
@@ -584,9 +601,9 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <span>Brief AI v2.0.0</span>
+            <span>v2.0.0</span>
             <span>•</span>
-            <span>© <span id="footerYear">2026</span></span>
+            <span>© <span id="footerYear">2026</span> <a href="https://parfaittedomtedom.com" target="_blank" style="color: inherit; text-decoration: none;">Parfait Tedom Tedom</a></span>
         </footer>
     </div>
 

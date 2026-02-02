@@ -1,137 +1,139 @@
 # Brief AI
 
-A powerful Chrome extension that enhances your browsing experience with AI-powered tools. Choose between **Local AI** (Chrome's built-in Gemini Nano) or **Online AI** (Google Vertex AI) for maximum flexibility.
+A Chrome extension for AI-powered text processing using Chrome's built-in Gemini Nano. Summarize, translate, proofread, and chat with AI directly in your browser.
 
 ## Features
 
-### Core Features
-- **Smart Summarization**: Quickly summarize any text with multiple options (TL;DR, Key Points, Teaser, Headline)
-- **Real-time Translation**: Translate text instantly with streaming support
-- **AI Chat**: Have conversations with AI that remembers context
-- **Context Menu Integration**: Right-click selected text for instant AI actions
+**Standard Mode**
+- Summarize: Quick summaries with multiple formats (TL;DR, Key Points, Teaser, Headline)
+- Translate: Real-time translation with streaming support
+- Proofread: Fix spelling and grammar errors
+- AI Chat: Conversational AI with image description support
 
-### Hybrid AI Mode (NEW!)
-- **Local AI Mode**: Use Chrome's built-in Gemini Nano (privacy-focused, no internet required)
-- **Online AI Mode**: Connect to Google Vertex AI for more powerful models
-  - Gemini 1.5 Pro
-  - Gemini 1.5 Flash
-  - Gemini Pro
-- **Seamless Switching**: Toggle between modes instantly
-- **Persistent Configuration**: Your settings are saved automatically
+**Workers Mode** (Beta)
+- Live Stream Translation: Real-time caption translation for YouTube, Netflix, Twitch
+
+## Requirements
+
+Chrome 138+ with the following flags enabled:
+
+```
+chrome://flags/#optimization-guide-on-device-model → Enabled
+chrome://flags/#prompt-api-for-gemini-nano-multimodal-input → Enabled
+chrome://flags/#proofreader-api-for-gemini-nano → Enabled
+chrome://flags/#summarization-api-for-gemini-nano → Enabled
+chrome://flags/#translation-api-without-language-pack → Enabled
+```
+
+After enabling flags, restart Chrome and wait for Gemini Nano to download (check `chrome://components` for "Optimization Guide On Device Model").
 
 ## Installation
 
-### From Chrome Web Store
-Coming soon!
-
-### Manual Installation (Developer Mode)
 1. Clone or download this repository
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable "Developer mode" (toggle in top-right)
-4. Click "Load unpacked"
-5. Select the `brief-ai` folder
-6. The extension is now installed!
+2. Open `chrome://extensions/`
+3. Enable "Developer mode"
+4. Click "Load unpacked" and select the project folder
 
 ## Usage
 
-### Basic Usage
-1. Select text on any web page
-2. Right-click to open context menu
-3. Choose an action:
-   - **Summarize Selection**: Get a concise summary
-   - **Translate Selection**: Translate to another language
-   - **Ask AI about this**: Start a conversation with AI
+**Context Menu**
+- Select text on any webpage
+- Right-click and choose:
+  - Summarize Selection
+  - Translate Selection
+  - Fix Spelling & Grammar
+  - Ask AI about this
+- Right-click on an image: "Describe this Image"
 
-### Using Local AI (Gemini Nano)
-1. Open the Brief AI side panel
-2. Select **Local AI** mode in the header
-3. Use any AI feature - it runs directly in your browser
-4. No internet connection required (after initial model download)
+**Side Panel**
+- Click the Brief AI icon to open the side panel
+- Switch between Standard and Workers modes
+- Use the tabs to access different features
 
-### Using Online AI (Vertex AI)
-1. Click **Online AI** mode in the header
-2. Click **Connect** button
-3. On the authentication page, enter:
-   - Your Google Cloud Project ID
-   - Region/Location
-   - API Key
-4. Click **Test Connection** to verify
-5. Click **Save Configuration**
-6. Select your preferred model (Gemini 1.5 Pro, Flash, or Pro)
-7. All AI features now use Vertex AI!
+## Hybrid AI Mode (Firebase AI Logic)
 
-### Getting Google Vertex AI Credentials
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create a new project or select existing one
-3. Enable the **Vertex AI API**
-4. Go to **APIs & Services > Credentials**
-5. Create an API key
-6. Copy the key and use it in Brief AI
+Brief AI supports hybrid inference using Firebase AI Logic with the `prefer_on_device` mode:
+
+1. Uses local Gemini Nano when available (privacy-focused, offline capable)
+2. Falls back to cloud Gemini models when local AI is unavailable
+
+To enable Firebase AI Logic:
+
+1. Create a Firebase project at https://console.firebase.google.com
+2. Enable the Generative Language API in Google Cloud Console
+3. Update `config/firebase-config.js` with your credentials:
+
+```javascript
+export const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "your-project.firebaseapp.com",
+    projectId: "your-project-id",
+    // ...
+};
+```
+
+4. The extension will automatically use `prefer_on_device` mode
+
+See `services/firebase-ai-logic.js` for implementation details.
+
+## Project Structure
+
+```
+brief-ai/
+├── manifest.json          # Extension manifest
+├── background.js          # Service worker
+├── content.js             # Content script for live translation
+├── config/
+│   └── firebase-config.js # Firebase configuration
+├── services/
+│   ├── ai-services.js     # Main AI service
+│   ├── proofreader-service.js
+│   ├── firebase-ai-logic.js
+│   └── ...
+├── sidepanel/
+│   ├── sidepanel-new.html
+│   ├── sidepanel-new.js
+│   └── sidepanel.css
+└── icons/
+```
 
 ## Roadmap
 
-- [x] Summarizer with multiple types (TL;DR, Key Points, Teaser, Headline)
-- [x] Real-time streaming translation
-- [x] AI Chat with conversation memory
-- [x] Context menu integration
-- [x] **Hybrid AI Mode (Local + Online)**
-- [x] Google Vertex AI integration
-- [ ] Support for more AI providers (OpenAI, Anthropic Claude)
-- [ ] Custom system prompts
-- [ ] Export conversation history
-- [ ] Multi-language UI
+**v2.1.0 - Shopping Assistant**
+- Product analysis and comparison
+- Price tracking
+- Review summarization
 
-## Tech Stack
+**v2.2.0 - Study Assistant**
+- Auto-generated course notes
+- Flashcard creation
+- Quiz generation
 
-- **Chrome Extensions** (Manifest V3)
-- **Chrome Built-in AI APIs**
-  - Summarizer API
-  - Translator API
-  - Language Detector API
-  - Prompt API (Gemini Nano)
-- **Google Vertex AI**
-  - Gemini 1.5 Pro
-  - Gemini 1.5 Flash
-  - Gemini Pro
-- **JavaScript** (ES6+ Modules)
-- **CSS3** (Custom Design System)
+**v2.3.0 - Enhanced Features**
+- More language support
+- Custom prompt templates
+- Export conversation history
+- Cross-device sync
 
-## Privacy & Security
+## Contributing
 
-### Local AI Mode
-- All processing happens on your device
-- No data sent to external servers
-- Complete privacy
+Contributions are welcome. Please open an issue first to discuss what you would like to change.
 
-### Online AI Mode
-- API key stored securely in Chrome's local storage
-- Keys never shared with third parties
-- You control your Google Cloud project
-- Direct communication with Google Vertex AI only
-
-## Version History
-
-### v1.0.1 (Current)
-- Added Hybrid AI Mode (Local/Online)
-- Google Vertex AI integration
-- Model selection (Gemini 1.5 Pro, Flash, Pro)
-- Authentication page for API configuration
-- Improved status indicators
-- Enhanced UI with professional icons
-
-### v1.0.0
-- Initial release
-- Basic summarization
-- Translation support
-- AI Chat
-- Context menu integration
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/new-feature`)
+3. Commit your changes
+4. Push to the branch
+5. Open a Pull Request
 
 ## License
 
-Free to use - Version 1.0.1
+MIT
 
-© 2024 Brief AI - All rights reserved
+## Author
 
-## Support
+Created by [Parfait Tedom Tedom](https://parfaittedomtedom.com)
 
-For issues, questions, or feature requests, please open an issue on GitHub.
+## Acknowledgments
+
+- Chrome Built-in AI APIs (Gemini Nano)
+- Firebase AI Logic for hybrid inference

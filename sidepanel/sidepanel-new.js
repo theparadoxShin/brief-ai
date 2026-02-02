@@ -185,10 +185,9 @@
             }
         });
 
-        // Sign In button - redirect to landing page
+        // Sign In button - Coming soon
         signInBtn?.addEventListener('click', () => {
-            // Open landing page for authentication
-            chrome.tabs.create({ url: chrome.runtime.getURL('landing/index.html') });
+            showToast('Coming soon', 'info');
         });
 
         // Sign Out button handler
@@ -842,6 +841,15 @@
             }
         });
 
+        // Clear live history button
+        $('#clearLiveHistory')?.addEventListener('click', () => {
+            const original = $('#originalText');
+            const translated = $('#translatedText');
+            if (original) original.textContent = '';
+            if (translated) translated.textContent = '';
+            showToast('History cleared', 'info');
+        });
+
         // Listen for live translation updates
         chrome.runtime.onMessage.addListener((msg) => {
             if (!msg) return;
@@ -854,15 +862,23 @@
                 if (msg.detectedLanguage && detected) {
                     detected.textContent = `Detected: ${msg.detectedLanguage}`;
                 }
+
+                // Append text to the stream boxes (persistent history)
                 if (msg.original && original) {
-                    original.textContent = msg.original;
-                    original.classList.add('updating');
-                    setTimeout(() => original.classList.remove('updating'), 150);
+                    // Add new line if there's already content
+                    if (original.textContent) {
+                        original.textContent += '\n';
+                    }
+                    original.textContent += msg.original;
+                    original.scrollTop = original.scrollHeight;
                 }
+                
                 if (msg.translated && translated) {
-                    translated.textContent = msg.translated;
-                    translated.classList.add('updating');
-                    setTimeout(() => translated.classList.remove('updating'), 150);
+                    if (translated.textContent) {
+                        translated.textContent += '\n';
+                    }
+                    translated.textContent += msg.translated;
+                    translated.scrollTop = translated.scrollHeight;
                 }
             } else if (msg.type === 'LIVE_AUDIO_LEVELS') {
                 const level = Math.max(0, Math.min(1, Number(msg.level) || 0));
