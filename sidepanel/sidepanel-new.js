@@ -1,6 +1,6 @@
 /**
  * Brief AI - Side Panel Controller
- * Version: 1.1.0
+ * Version: 2.0.0
  * Clean, optimized, and debugged version
  */
 (function() {
@@ -12,7 +12,9 @@
 
     // ===== STATE =====
     let liveActive = false;
+    let liveFirstCaption = true;
     let ttsState = { isSpeaking: false, isPaused: false, utterance: null };
+    let audioCapture = { stream: null, audioCtx: null, source: null, analyser: null, meterInterval: null };
 
     // ===== UTILITIES =====
     function escapeHtml(text) {
@@ -74,6 +76,25 @@
     async function getActiveTabId() {
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
         return tabs?.[0]?.id ?? null;
+    }
+
+    /**
+     * Ensure the content script is loaded in the given tab.
+     * If it doesn't respond to a ping, inject it programmatically.
+     */
+    async function ensureContentScript(tabId) {
+        try {
+            const resp = await chrome.tabs.sendMessage(tabId, { action: 'PING' });
+            if (resp?.pong) return; // already loaded
+        } catch {
+            // Content script not present – inject it
+        }
+        await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['content.js']
+        });
+        // Give the script a moment to initialise
+        await new Promise(r => setTimeout(r, 150));
     }
 
     // ===== INITIALIZATION =====
@@ -444,6 +465,8 @@
     }
 
     // ===== TRANSLATE =====
+    let translatePort = null; // Track active port to avoid leaks
+
     function initTranslate() {
         const input = $('#translate-input');
         const sourceLang = $('#source-lang');
@@ -507,7 +530,14 @@
         if (output) output.innerHTML = '<span class="placeholder-text">Translating...</span>';
 
         try {
+            // Disconnect previous port to avoid stale results
+            if (translatePort) {
+                try { translatePort.disconnect(); } catch (e) {}
+                translatePort = null;
+            }
+
             const port = chrome.runtime.connect({ name: 'translate-stream' });
+            translatePort = port;
             let fullTranslation = '';
 
             port.onMessage.addListener((msg) => {
@@ -863,6 +893,13 @@
                     detected.textContent = `Detected: ${msg.detectedLanguage}`;
                 }
 
+                // Clear waiting message on first real caption
+                if (liveFirstCaption && msg.original) {
+                    if (original) original.textContent = '';
+                    if (translated) translated.textContent = '';
+                    liveFirstCaption = false;
+                }
+
                 // Append text to the stream boxes (persistent history)
                 if (msg.original && original) {
                     // Add new line if there's already content
@@ -880,13 +917,6 @@
                     translated.textContent += msg.translated;
                     translated.scrollTop = translated.scrollHeight;
                 }
-            } else if (msg.type === 'LIVE_AUDIO_LEVELS') {
-                const level = Math.max(0, Math.min(1, Number(msg.level) || 0));
-                const pct = Math.round(level * 100);
-                const bar = $('#audioLevelBar');
-                const val = $('#audioLevelVal');
-                if (bar) bar.style.width = pct + '%';
-                if (val) val.textContent = pct + '%';
             } else if (msg.type === 'LIVE_AUDIO_STATUS' || msg.type === 'LIVE_TRANSLATION_STATUS') {
                 const statusText = $('#statusIndicator .status-text');
                 if (statusText && msg.message) {
@@ -894,6 +924,71 @@
                 }
             }
         });
+    }
+
+    /**
+     * Start tab audio capture using MV3 tabCapture.getMediaStreamId().
+     * The service worker returns a streamId; getUserMedia runs here in the side panel.
+     */
+    async function startLocalAudioCapture() {
+        if (audioCapture.stream) return; // already capturing
+
+        const resp = await chrome.runtime.sendMessage({ action: 'GET_TAB_CAPTURE_STREAM_ID' });
+        if (!resp?.success || !resp.streamId) {
+            console.warn('[Brief AI] Could not get tab capture stream ID:', resp?.error);
+            return;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                mandatory: {
+                    chromeMediaSource: 'tab',
+                    chromeMediaSourceId: resp.streamId
+                }
+            }
+        });
+
+        const audioCtx = new AudioContext();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        // Route to destination so the user still hears the tab audio
+        source.connect(audioCtx.destination);
+
+        const dataArray = new Uint8Array(analyser.fftSize);
+        const meterInterval = setInterval(() => {
+            analyser.getByteTimeDomainData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                const v = (dataArray[i] - 128) / 128;
+                sum += v * v;
+            }
+            const rms = Math.sqrt(sum / dataArray.length);
+            const level = Math.min(1, Math.max(0, rms * 1.8));
+            const pct = Math.round(level * 100);
+            const bar = $('#audioLevelBar');
+            const val = $('#audioLevelVal');
+            if (bar) bar.style.width = pct + '%';
+            if (val) val.textContent = pct + '%';
+        }, 120);
+
+        audioCapture = { stream, audioCtx, source, analyser, meterInterval };
+    }
+
+    /** Stop local audio capture and clean up resources. */
+    async function stopLocalAudioCapture() {
+        if (audioCapture.meterInterval) clearInterval(audioCapture.meterInterval);
+        if (audioCapture.source) try { audioCapture.source.disconnect(); } catch {}
+        if (audioCapture.analyser) try { audioCapture.analyser.disconnect(); } catch {}
+        if (audioCapture.audioCtx) try { await audioCapture.audioCtx.close(); } catch {}
+        if (audioCapture.stream) try { audioCapture.stream.getTracks().forEach(t => t.stop()); } catch {}
+        audioCapture = { stream: null, audioCtx: null, source: null, analyser: null, meterInterval: null };
+        // Reset meter UI
+        const bar = $('#audioLevelBar');
+        const val = $('#audioLevelVal');
+        if (bar) bar.style.width = '0%';
+        if (val) val.textContent = '0%';
     }
 
     async function startLiveTranslation() {
@@ -911,6 +1006,9 @@
         setButtonLoading(toggleBtn, true);
 
         try {
+            // Make sure content script is loaded in the tab
+            await ensureContentScript(tabId);
+
             await chrome.tabs.sendMessage(tabId, {
                 action: 'START_LIVE_TRANSLATION',
                 targetLanguage: targetLang,
@@ -918,13 +1016,22 @@
                 showOverlay: true
             });
 
-            // Start audio capture if not captions-only
+            // Start audio capture locally if not captions-only
             if (mode !== 'captions-only') {
-                await chrome.runtime.sendMessage({ action: 'START_AUDIO_CAPTURE' }).catch(() => {});
+                await startLocalAudioCapture().catch(e =>
+                    console.warn('[Brief AI] Audio capture skipped:', e.message)
+                );
             }
 
             liveActive = true;
+            liveFirstCaption = true;
             if (liveDisplay) liveDisplay.style.display = 'block';
+
+            // Show waiting message in stream boxes
+            const original = $('#originalText');
+            const translated = $('#translatedText');
+            if (original) original.textContent = '⏳ Waiting for captions…\nMake sure CC/subtitles are enabled on the video.';
+            if (translated) translated.textContent = '⏳ Translation will appear here…';
             
             if (toggleBtn) {
                 toggleBtn.classList.add('active');
@@ -954,7 +1061,7 @@
             if (tabId) {
                 await chrome.tabs.sendMessage(tabId, { action: 'STOP_LIVE_TRANSLATION' }).catch(() => {});
             }
-            await chrome.runtime.sendMessage({ action: 'STOP_AUDIO_CAPTURE' }).catch(() => {});
+            await stopLocalAudioCapture();
         } catch (e) {
             console.warn('[Brief AI] Stop live translation warning:', e);
         }
@@ -1158,7 +1265,7 @@
             const response = await chrome.runtime.sendMessage({
                 action: 'DESCRIBE_IMAGE',
                 imageUrl: imageUrl,
-                prompt: 'Describe this image in detail. What do you see? Include colors, objects, people, text, and any other relevant details. Respond in the same language as my request.'
+                prompt: 'Describe this image in detail in English. What do you see? Include colors, objects, people, text, and any other relevant details. You MUST respond in English.'
             });
             
             removeChatThinking(thinkingId);
@@ -1233,7 +1340,7 @@
             const response = await chrome.runtime.sendMessage({
                 action: 'DESCRIBE_IMAGE',
                 imageUrl: base64, // Send as base64 data URL
-                prompt: 'Describe this image in detail. What do you see? Include colors, objects, people, text, and any other relevant details.'
+                prompt: 'Describe this image in detail in English. What do you see? Include colors, objects, people, text, and any other relevant details. You MUST respond in English.'
             });
             
             removeChatThinking(thinkingId);

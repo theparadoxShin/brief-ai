@@ -14,6 +14,8 @@ class LiveTranslatorController {
         this.platform = this.detectPlatform();
         this.debounceTimer = null;
         this.captionBuffer = '';
+        this.captionPollInterval = null;
+        this.captionFound = false; // true once first caption is detected
     }
 
     // Detect which platform we're on
@@ -48,6 +50,7 @@ class LiveTranslatorController {
         this.removeOverlay();
         this.lastOriginal = '';
         this.captionBuffer = '';
+        this.captionFound = false;
         this.postStatus('Live translation stopped');
     }
 
@@ -121,6 +124,12 @@ class LiveTranslatorController {
             this.mutationObserver = null;
         }
         
+        // Stop caption polling
+        if (this.captionPollInterval) {
+            clearInterval(this.captionPollInterval);
+            this.captionPollInterval = null;
+        }
+        
         // Clear listeners
         this.listeners.forEach(({ target, type, handler }) => {
             try { target.removeEventListener(type, handler); } catch {}
@@ -135,9 +144,68 @@ class LiveTranslatorController {
     }
 
     // ===== YOUTUBE SPECIFIC =====
+
+    /**
+     * Try to auto-enable CC on YouTube if not already active.
+     * The CC button has aria-pressed="true" when active.
+     */
+    enableYouTubeCaptions() {
+        const ccBtn = document.querySelector('.ytp-subtitles-button');
+        if (!ccBtn) {
+            console.log('[Brief AI] YouTube CC button not found');
+            return false;
+        }
+        if (ccBtn.getAttribute('aria-pressed') === 'true') {
+            console.log('[Brief AI] YouTube CC already enabled');
+            return true;
+        }
+        ccBtn.click();
+        console.log('[Brief AI] Auto-enabled YouTube captions');
+        return true;
+    }
+
+    /**
+     * Periodic poll that re-checks for caption DOM elements.
+     * Acts as a fallback if MutationObserver misses updates.
+     */
+    startCaptionPolling() {
+        if (this.captionPollInterval) return;
+        let pollCount = 0;
+        const maxPolls = 60; // 2s × 60 = 2 minutes max
+
+        this.captionPollInterval = setInterval(() => {
+            pollCount++;
+            if (!this.active || pollCount > maxPolls) {
+                clearInterval(this.captionPollInterval);
+                this.captionPollInterval = null;
+                if (pollCount > maxPolls && !this.captionFound) {
+                    this.setOverlayText('⚠️ No captions detected.\nEnable CC/subtitles on the video.');
+                    this.postStatus('No captions detected. Enable CC/subtitles on the video.');
+                }
+                return;
+            }
+
+            // Platform-specific poll
+            if (this.platform === 'youtube') {
+                // Re-try auto-enabling CC if no caption found yet
+                if (!this.captionFound) {
+                    this.enableYouTubeCaptions();
+                }
+                this.checkAllYouTubeCaptions();
+            } else if (this.platform === 'netflix') {
+                this.checkAllNetflixCaptions();
+            } else {
+                this.checkGenericCaptions();
+            }
+        }, 2000);
+    }
+
     startYouTubeDetection() {
         console.log('[Brief AI] Starting YouTube caption detection');
         
+        // Try to auto-enable CC
+        this.enableYouTubeCaptions();
+
         // YouTube caption selectors (they change frequently, so we use multiple)
         const captionSelectors = [
             '.ytp-caption-segment',           // Main caption segments
@@ -179,6 +247,9 @@ class LiveTranslatorController {
         
         // Initial check
         this.checkAllYouTubeCaptions();
+
+        // Start periodic polling as backup
+        this.startCaptionPolling();
         
         this.setOverlayText('🎬 Listening for YouTube captions...\nMake sure CC is enabled!');
     }
@@ -247,7 +318,23 @@ class LiveTranslatorController {
             characterData: true
         });
         
+        // Start periodic polling as backup
+        this.startCaptionPolling();
+
         this.setOverlayText('🎬 Listening for Netflix captions...');
+    }
+
+    checkAllNetflixCaptions() {
+        const containers = document.querySelectorAll('.player-timedtext-text-container span');
+        if (containers.length > 0) {
+            const text = Array.from(containers)
+                .map(el => el.textContent?.trim())
+                .filter(Boolean)
+                .join(' ');
+            if (text && text !== this.lastOriginal) {
+                this.handleDetectedCaption(text);
+            }
+        }
     }
 
     // ===== TWITCH SPECIFIC =====
@@ -322,7 +409,30 @@ class LiveTranslatorController {
             characterData: true
         });
         
+        // Start periodic polling as backup
+        this.startCaptionPolling();
+
         this.setOverlayText('🎬 Listening for captions...\nEnable CC/subtitles on the video.');
+    }
+
+    checkGenericCaptions() {
+        const selectors = [
+            '[class*="caption"]', '[class*="subtitle"]',
+            '.vjs-text-track-display', '.jw-captions', '.plyr__captions'
+        ];
+        for (const selector of selectors) {
+            const els = document.querySelectorAll(selector);
+            if (els.length > 0) {
+                const text = Array.from(els)
+                    .map(el => el.textContent?.trim())
+                    .filter(Boolean)
+                    .join(' ');
+                if (text && text !== this.lastOriginal && text.length > 2) {
+                    this.handleDetectedCaption(text);
+                    break;
+                }
+            }
+        }
     }
 
     // ===== HTML5 VIDEO TRACKS (Fallback) =====
@@ -382,6 +492,12 @@ class LiveTranslatorController {
     handleDetectedCaption(text) {
         if (!text || text === this.lastOriginal) return;
         
+        // Mark that we found captions (stops retry polling)
+        if (!this.captionFound) {
+            this.captionFound = true;
+            console.log('[Brief AI] First caption detected!');
+        }
+
         // Debounce rapid changes
         clearTimeout(this.debounceTimer);
         this.debounceTimer = setTimeout(() => {
@@ -395,14 +511,11 @@ class LiveTranslatorController {
         this.lastOriginal = text;
         console.log('[Brief AI] Caption detected:', text.substring(0, 50) + '...');
 
-        // Update side panel with original
-        chrome.runtime.sendMessage({ 
-            type: 'LIVE_TRANSLATION_UPDATE', 
-            original: text 
-        }).catch(() => {});
-
-        // Show original while translating
+        // Show original in overlay while translating
         this.setOverlayText(`⏳ ${text}`);
+
+        let translated = null;
+        let detectedLanguage = 'auto';
 
         try {
             const resp = await chrome.runtime.sendMessage({
@@ -414,24 +527,25 @@ class LiveTranslatorController {
             });
 
             if (resp?.success && resp?.data?.translatedText) {
-                const translated = resp.data.translatedText;
+                translated = resp.data.translatedText;
+                detectedLanguage = resp.data.sourceLanguage || 'auto';
                 
-                // Update overlay
+                // Update overlay with translation
                 if (this.showOverlay) {
                     this.setOverlayText(translated);
                 }
-                
-                // Update side panel
-                chrome.runtime.sendMessage({
-                    type: 'LIVE_TRANSLATION_UPDATE',
-                    original: text,
-                    translated: translated,
-                    detectedLanguage: resp.data.sourceLanguage || 'auto'
-                }).catch(() => {});
             }
         } catch (e) {
             console.warn('[Brief AI] Translation failed:', e);
         }
+
+        // Send a SINGLE update to side panel with both original + translated
+        chrome.runtime.sendMessage({
+            type: 'LIVE_TRANSLATION_UPDATE',
+            original: text,
+            translated: translated || text,
+            detectedLanguage: detectedLanguage
+        }).catch(() => {});
     }
 
     postStatus(message) {
@@ -448,6 +562,11 @@ const LiveTranslator = new LiveTranslatorController();
 // Listen for messages from background or side panel
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!request || !request.action) return;
+
+    if (request.action === 'PING') {
+        sendResponse({ pong: true });
+        return;
+    }
     
     if (request.action === 'START_LIVE_TRANSLATION') {
         console.log('[Brief AI] Received START_LIVE_TRANSLATION', request);
@@ -457,13 +576,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             showOverlay: request.showOverlay
         });
         sendResponse({ success: true });
+        return true;
     } else if (request.action === 'STOP_LIVE_TRANSLATION') {
         console.log('[Brief AI] Received STOP_LIVE_TRANSLATION');
         LiveTranslator.stop();
         sendResponse({ success: true });
+        return true;
     }
-    
-    return true; // Keep channel open for async
 });
 
 console.log('[Brief AI] Content script loaded on:', window.location.hostname);

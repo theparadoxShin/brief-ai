@@ -96,6 +96,7 @@ body {
 .coffee-btn:hover {
     background: rgba(255,255,255,0.25);
     transform: scale(1.1);
+    color: #e74c6f;
 }
 
 /* Status Indicator */
@@ -974,6 +975,18 @@ body {
     border-top: 1px solid var(--border);
     font-size: 11px;
     color: var(--text-muted);
+}
+
+.footer .sponsor-link {
+    color: #e74c6f;
+    text-decoration: none;
+    font-weight: 500;
+    transition: var(--transition);
+}
+
+.footer .sponsor-link:hover {
+    color: #ff6b9d;
+    text-decoration: underline;
 }
 
 /* ===== SCROLLBAR ===== */

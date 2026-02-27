@@ -3,6 +3,7 @@
     "name": "Brief AI",
     "description": "AI-powered text summarization, translation, proofreading, and live stream translation using Chrome's built-in Gemini Nano.",
     "version": "2.0.0",
+    "minimum_chrome_version": "138",
     "permissions": [
         "contextMenus",
         "activeTab",
@@ -40,7 +41,7 @@
     "web_accessible_resources": [
         {
             "resources": ["auth/auth.html", "auth/auth.css", "auth/auth.js"],
-            "matches": ["<all_urls>"]
+            "matches": ["https://*.firebaseapp.com/*", "https://*.googleapis.com/*"]
         }
     ]
 }

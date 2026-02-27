@@ -727,7 +727,7 @@ export class AIService {
                     initialPrompts: [
                         {
                             role: 'system',
-                            content: 'You are a helpful AI assistant that can describe images in detail. Be descriptive and accurate.'
+                            content: 'You are a helpful AI assistant that can describe images in detail. Be descriptive and accurate. IMPORTANT: Always respond in the SAME language as the user\'s prompt. If the user writes in English, respond in English. If the user writes in French, respond in French. Never switch languages unless explicitly asked.'
                         }
                     ],
                     monitor(m) {
@@ -743,7 +743,7 @@ export class AIService {
             const response = await fetch(imageUrl);
             const imageBlob = await response.blob();
 
-            const prompt = customPrompt || 'Describe this image in detail. What do you see? Include colors, objects, people, text, and any other relevant details.';
+            const prompt = customPrompt || 'Describe this image in detail in English. What do you see? Include colors, objects, people, text, and any other relevant details. You MUST respond in English.';
 
             // Use multimodal prompt with image
             const result = await this.multimodalSession.prompt([
