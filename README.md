@@ -106,19 +106,11 @@ brief-ai/
 │   └── firebase-config.js     # Firebase configuration
 ├── services/
 │   ├── ai-services.js         # Core AI service (Summarizer, Translator, Prompt, etc.)
-│   ├── proofreader-service.js # Proofreader API wrapper
-│   ├── ai-router.js           # Smart routing between Local/Cloud AI
-│   ├── cloud-ai-service.js    # Cloud AI via Firebase Functions
-│   ├── firebase-auth.js       # Firebase Authentication
-│   └── firebase-ai-logic.js   # Firebase AI Logic hybrid mode
+│   └── proofreader-service.js # Proofreader API wrapper
 ├── sidepanel/
 │   ├── sidepanel-new.html     # Side panel UI
 │   ├── sidepanel-new.js       # Side panel controller
 │   └── sidepanel.css          # Styles
-├── auth/
-│   ├── auth.html              # Cloud AI authentication page
-│   ├── auth.css
-│   └── auth.js
 └── icons/
     ├── icon16.png
     ├── logo48.png

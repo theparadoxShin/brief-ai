@@ -10,12 +10,7 @@
         "scripting",
         "storage",
         "sidePanel",
-        "tabs",
         "tabCapture"
-    ],
-    "host_permissions": [
-        "https://*.googleapis.com/*",
-        "https://*.aiplatform.googleapis.com/*"
     ],
     "background": {
         "service_worker": "background.js",
@@ -37,11 +32,5 @@
     },
     "action":{
         "default_title": "Brief AI - Your AI Assistant"
-    },
-    "web_accessible_resources": [
-        {
-            "resources": ["auth/auth.html", "auth/auth.css", "auth/auth.js"],
-            "matches": ["https://*.firebaseapp.com/*", "https://*.googleapis.com/*"]
-        }
-    ]
+    }
 }
